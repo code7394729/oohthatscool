@@ -1,0 +1,11 @@
+# Build outputs
+/build/
+programs/*/build/
+
+# Node
+node_modules/
+
+# Editor / OS
+*.swp
+*~
+.DS_Store

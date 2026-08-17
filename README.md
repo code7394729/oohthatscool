@@ -6,8 +6,10 @@ in-order machine shipping in the RP2350 / Raspberry Pi Pico 2 — in the browser
 via WebAssembly, and watch its live microarchitectural state animate onto an
 interactive SVG datapath.
 
-> **Status: design phase.** No implementation yet. The proposal is in
-> [`docs/design.md`](docs/design.md) and is under review.
+> **Status: bring-up working.** The real Hazard3 core now runs a program under
+> Node.js via Verilator → WASM, with output identical to a native build. The UI
+> layers are still to come. Design proposal: [`docs/design.md`](docs/design.md);
+> bring-up notes and workarounds: [`docs/bringup.md`](docs/bringup.md).
 
 ## The idea
 
@@ -15,6 +17,25 @@ Hazard3 RTL → Verilator → C++ → Emscripten/WASM, driving a TypeScript + SV
 front end. Students single-step a real program and *see* forwarding paths light
 up, load-use bubbles appear, and taken branches flush the front end — cycle for
 cycle, because it's the actual core, not a toy model.
+
+## Quick start
+
+```bash
+sudo apt install -y verilator gcc-riscv64-unknown-elf     # toolchains
+git clone https://github.com/emscripten-core/emsdk /opt/emsdk
+(cd /opt/emsdk && ./emsdk install latest && ./emsdk activate latest)
+git submodule update --init third_party/hazard3           # pull Hazard3
+
+./programs/build.sh hello        # build a test program
+./scripts/build-native.sh        # native build (correctness oracle)
+./scripts/build-wasm.sh          # WASM build for Node
+
+node build/wasm/hz3_sim.js --bin programs/hello/build/hello.bin
+# -> Hello, world from Hazard3 running in WebAssembly!
+```
+
+See [`docs/bringup.md`](docs/bringup.md) for the toolchain, layout, and the
+exact Verilator→Emscripten workarounds.
 
 ## Read the design
 
