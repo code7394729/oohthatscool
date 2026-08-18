@@ -35,6 +35,10 @@ verilator --cc --top-module hz3_top -Wno-fatal \
 	-I"$H3" -I"$ROOT/rtl" --Mdir "$OBJ" \
 	"${RTL[@]}"
 
+# Which Verilator runtime sources this model needs — asked of Verilator's own
+# generated makefile rather than assumed. See scripts/toolchain.sh.
+resolve_runtime_srcs "$OBJ" Vhz3_top
+
 echo "== stage 2: em++ -> wasm/js (node) =="
 # NODERAWFS lets the same CLI harness read the real filesystem and argv under
 # Node, so the WASM build behaves like the native one.
@@ -49,8 +53,7 @@ echo "== stage 2: em++ -> wasm/js (node) =="
 	-DVL_USER_FINISH -DVL_USER_STOP -DVL_USER_FATAL \
 	-I"$OBJ" -I"$VROOT/include" -I"$VROOT/include/vltstd" -I"$ROOT/sim" \
 	"$OBJ"/*.cpp \
-	"$VROOT/include/verilated.cpp" \
-	"$VROOT/include/verilated_threads.cpp" \
+	"${RUNTIME_SRCS[@]}" \
 	"$ROOT/sim/vl_hooks.cpp" \
 	"$ROOT/sim/main.cpp" \
 	-sALLOW_MEMORY_GROWTH=1 \

@@ -38,13 +38,21 @@ CXXFLAGS=(-O2 -std=c++17
 	-I"$OBJ" -I"$VROOT/include" -I"$VROOT/include/vltstd"
 	-I"$ROOT/sim" -I"$ROOT/sim/tests")
 
-# The Verilator runtime and our hooks, compiled once and shared by both binaries.
+# The Verilator runtime and our hooks, compiled once and shared by both
+# binaries. Which runtime sources the model needs is asked of Verilator's own
+# generated makefile rather than assumed — see scripts/toolchain.sh.
 echo "== building runtime =="
-g++ "${CXXFLAGS[@]}" -c "$VROOT/include/verilated.cpp" -o "$BUILD/verilated.o"
-g++ "${CXXFLAGS[@]}" -c "$VROOT/include/verilated_threads.cpp" -o "$BUILD/verilated_threads.o"
-g++ "${CXXFLAGS[@]}" -c "$ROOT/sim/vl_hooks.cpp" -o "$BUILD/vl_hooks.o"
+resolve_runtime_srcs "$OBJ" Vhz3_top
 
-RUNTIME=("$OBJ/Vhz3_top__ALL.a" "$BUILD/verilated.o" "$BUILD/verilated_threads.o" "$BUILD/vl_hooks.o")
+RUNTIME=("$OBJ/Vhz3_top__ALL.a")
+for src in "${RUNTIME_SRCS[@]}"; do
+	obj="$BUILD/$(basename "$src" .cpp).o"
+	g++ "${CXXFLAGS[@]}" -c "$src" -o "$obj"
+	RUNTIME+=("$obj")
+done
+
+g++ "${CXXFLAGS[@]}" -c "$ROOT/sim/vl_hooks.cpp" -o "$BUILD/vl_hooks.o"
+RUNTIME+=("$BUILD/vl_hooks.o")
 
 echo "== building hz3_sim =="
 g++ "${CXXFLAGS[@]}" "$ROOT/sim/main.cpp" "${RUNTIME[@]}" -pthread -o "$BUILD/hz3_sim"

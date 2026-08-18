@@ -61,6 +61,48 @@ resolve_emxx() {
 	exit 1
 }
 
+# Sets RUNTIME_SRCS to the Verilator runtime .cpp files this model needs
+# linked, as absolute paths. Call after verilating; needs VROOT.
+#
+#   resolve_runtime_srcs <obj-dir> <prefix>     e.g. build/wasm/obj_dir Vhz3_top
+#
+# Verilator writes the list into the makefile it generates, as VM_GLOBAL_FAST
+# and VM_GLOBAL_SLOW. Reading it back beats hard-coding "verilated.cpp and
+# verilated_threads.cpp": which files the runtime needs is a property of the
+# Verilator version and of what the design uses, and newer Verilators ship
+# several more (verilated_timing, verilated_random, ...) that a design can pull
+# in. make itself does the parsing, so the format is Verilator's business.
+resolve_runtime_srcs() {
+	local objdir="$1" prefix="$2"
+	local mk="$objdir/${prefix}_classes.mk"
+	if [ ! -f "$mk" ]; then
+		echo "error: $mk not found — verilate before calling resolve_runtime_srcs" >&2
+		exit 1
+	fi
+
+	local names
+	names="$(printf 'include %s\nall:\n\t@echo $(VM_GLOBAL_FAST) $(VM_GLOBAL_SLOW)\n' "$mk" \
+		| make -f - --no-print-directory all)" || {
+		echo "error: could not read the runtime file list out of $mk" >&2
+		exit 1
+	}
+
+	RUNTIME_SRCS=()
+	local n
+	for n in $names; do
+		if [ ! -f "$VROOT/include/$n.cpp" ]; then
+			echo "error: $mk names $n, but $VROOT/include/$n.cpp does not exist" >&2
+			exit 1
+		fi
+		RUNTIME_SRCS+=("$VROOT/include/$n.cpp")
+	done
+
+	if [ "${#RUNTIME_SRCS[@]}" -eq 0 ]; then
+		echo "error: $mk listed no runtime sources" >&2
+		exit 1
+	fi
+}
+
 # Sets VROOT to Verilator's root (the one holding include/verilated.cpp).
 resolve_vroot() {
 	if ! command -v verilator >/dev/null 2>&1; then
