@@ -36,6 +36,9 @@ module hz3_top #(
 	input  wire               hexokay,
 	output wire [W_DATA-1:0]  hwdata,
 	input  wire [W_DATA-1:0]  hrdata
+
+	// Observability ports (read-only taps into the core) — see hz3_probe.vh.
+`include "hz3_probe_ports.vh"
 );
 
 // Configuration localparams (EXTENSION_*, CSR_*, NUM_IRQS, ...).
@@ -122,6 +125,10 @@ hazard3_cpu_1port #(
 	.soft_irq                   (1'b0),
 	.timer_irq                  (1'b0)
 );
+
+// ----------------------------------------------------------------------------
+// Observability. Reads only; drives nothing inside the core.
+`include "hz3_probe.vh"
 
 endmodule
 

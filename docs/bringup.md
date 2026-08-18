@@ -7,7 +7,7 @@ output **bit-identical to a native g++ build** (same message, same exit code,
 same cycle count), which is the correctness check for the WASM port.
 
 ```
-$ node build/wasm/hz3_sim.js --bin programs/hello/build/hello.bin
+$ node build/wasm/hz3_sim.cjs --bin programs/hello/build/hello.bin
 Hello, world from Hazard3 running in WebAssembly!
 
 [sim] CPU requested exit, code=123, after 476 cycles
@@ -52,13 +52,13 @@ git clone https://github.com/emscripten-core/emsdk /opt/emsdk
 # 2. a test program  ->  programs/hello/build/hello.bin
 ./programs/build.sh hello
 
-# 3a. native (fast correctness oracle) -> build/native/obj_dir/hz3_sim
+# 3a. native (fast correctness oracle) -> build/native/hz3_sim + hz3_test
 ./scripts/build-native.sh
-./build/native/obj_dir/hz3_sim --bin programs/hello/build/hello.bin
+./build/native/hz3_sim --bin programs/hello/build/hello.bin
 
-# 3b. WASM for Node -> build/wasm/hz3_sim.{js,wasm}
+# 3b. WASM for Node -> build/wasm/hz3_sim.{cjs,wasm}
 ./scripts/build-wasm.sh
-node build/wasm/hz3_sim.js --bin programs/hello/build/hello.bin
+node build/wasm/hz3_sim.cjs --bin programs/hello/build/hello.bin
 ```
 
 ## Workarounds (the reproducible versions)
@@ -93,10 +93,14 @@ Node, so the WASM build behaves like native), `-sALLOW_MEMORY_GROWTH=1` (the
   teaching examples want anyway.
 - The rv64 GCC needs **`-mabi=ilp32`** with `-march=rv32*` or it errors that the
   ABI requires the `D` extension.
+- The standalone CLI is emitted as **`.cjs`**, not `.js`. Emscripten's program
+  output is CommonJS, and the repo's `package.json` declares `"type": "module"`,
+  under which Node reads a `.js` file as ESM and chokes on `require`. The
+  importable library (`build-wasm-lib.sh`) has the opposite need and is `.mjs`.
 
 ## Next
 
-With the core proven under WASM, the next milestones are the **probe wrapper +
-`snapshot()`** (design §4–5) to expose per-cycle microarchitectural state, then
-the **Embind bridge** (`stepCycle` / `loadProgram` / `snapshot`) and the SVG UI.
-`sim/soc.h` is structured so the Embind bridge reuses it directly.
+Done since: the **probe wrapper + snapshot** and the **Embind bridge** — see
+[`probe.md`](probe.md). What remains is the SVG datapath (M3) and the panels and
+transport around it (M4); `js/src/render-text.mjs` already computes the derived
+state those need, with the pixels left off.

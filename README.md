@@ -6,10 +6,15 @@ in-order machine shipping in the RP2350 / Raspberry Pi Pico 2 — in the browser
 via WebAssembly, and watch its live microarchitectural state animate onto an
 interactive SVG datapath.
 
-> **Status: bring-up working.** The real Hazard3 core now runs a program under
-> Node.js via Verilator → WASM, with output identical to a native build. The UI
-> layers are still to come. Design proposal: [`docs/design.md`](docs/design.md);
-> bring-up notes and workarounds: [`docs/bringup.md`](docs/bringup.md).
+> **Status: state extraction working (M0–M2).** The real Hazard3 core runs
+> under Node.js via Verilator → WASM, and its live microarchitectural state —
+> pipeline occupancy, forwarding paths, stall causes, register writes — is
+> extracted from the RTL and available as a typed snapshot in C++ and
+> JavaScript, with test wrappers at both levels. No SVG yet.
+>
+> Design proposal: [`docs/design.md`](docs/design.md) · bring-up and toolchain
+> workarounds: [`docs/bringup.md`](docs/bringup.md) · how state gets out and how
+> register updates are indicated: [`docs/probe.md`](docs/probe.md).
 
 ## The idea
 
@@ -27,15 +32,27 @@ git clone https://github.com/emscripten-core/emsdk /opt/emsdk
 git submodule update --init third_party/hazard3           # pull Hazard3
 
 ./programs/build.sh hello        # build a test program
-./scripts/build-native.sh        # native build (correctness oracle)
-./scripts/build-wasm.sh          # WASM build for Node
+./scripts/build-native.sh        # native: hz3_sim + hz3_test
+./scripts/build-wasm-lib.sh      # WASM module for Node and the browser
+./scripts/build-wasm.sh          # WASM CLI, the differential oracle
 
-node build/wasm/hz3_sim.js --bin programs/hello/build/hello.bin
+node build/wasm/hz3_sim.cjs --bin programs/hello/build/hello.bin
 # -> Hello, world from Hazard3 running in WebAssembly!
+
+./scripts/test.sh                # every suite, plus the native/WASM differential
 ```
 
-See [`docs/bringup.md`](docs/bringup.md) for the toolchain, layout, and the
-exact Verilator→Emscripten workarounds.
+Look at the machine from a terminal, no browser involved:
+
+```bash
+node js/cli/hz3.mjs step     --bin programs/hello/build/hello.bin --instructions 12
+node js/cli/hz3.mjs timeline --bin programs/hello/build/hello.bin   # reservation table
+node js/cli/hz3.mjs blink    --bin programs/hello/build/hello.bin   # register writes
+```
+
+See [`docs/bringup.md`](docs/bringup.md) for the toolchain and the exact
+Verilator→Emscripten workarounds, and [`docs/probe.md`](docs/probe.md) for how
+internal state is extracted and how register updates are indicated.
 
 ## Read the design
 

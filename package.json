@@ -1,0 +1,17 @@
+{
+  "name": "hazard3-visualizer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Interactive teaching visualizer for the Hazard3 RISC-V core",
+  "type": "module",
+  "license": "Apache-2.0",
+  "scripts": {
+    "test": "node js/test/run.mjs",
+    "test:pure": "node js/test/run.mjs --pure",
+    "test:all": "./scripts/test.sh",
+    "hz3": "node js/cli/hz3.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

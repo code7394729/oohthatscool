@@ -4,9 +4,13 @@ An in-browser, cycle-accurate teaching tool that runs the **real Hazard3 RISC-V
 core** in WebAssembly and animates its live microarchitectural state onto an
 interactive SVG datapath.
 
-> **Status:** design for review — no implementation yet.
+> **Status:** the design as proposed. Milestones M0–M2 are now implemented —
+> see [`bringup.md`](bringup.md) for the toolchain and [`probe.md`](probe.md)
+> for how state extraction (§4, option C) and the snapshot (§5) actually turned
+> out. This file is kept as the design of record and is not updated to match the
+> code; where they differ, the code and `probe.md` are current.
 > A rendered version of this document (with the datapath mock) is published as an
-> Artifact for review; this file is the tracked source of truth.
+> Artifact for review.
 
 | | |
 |---|---|
