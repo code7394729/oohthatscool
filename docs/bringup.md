@@ -21,11 +21,51 @@ Everything installs from stock Ubuntu 24.04 apt + emsdk; no hand-built tools.
 |---|---|---|
 | Verilator | 5.020 | `apt install verilator` |
 | RISC-V GCC | 13.2.0 (`riscv64-unknown-elf-`) | `apt install gcc-riscv64-unknown-elf` |
-| Emscripten | 6.0.6 | emsdk (`/opt/emsdk`) |
+| Emscripten | 6.0.7 | emsdk (`/opt/emsdk` by default — see below) |
+| g++ | 13 | `build-essential` |
 | Node | 22.x | preinstalled |
+| TypeScript | 5.9 | `npm install` |
+
+The versions above are the ones this was last built and tested against, end to
+end, on Ubuntu 24.04. Nothing is pinned tighter than "recent enough": the
+Emscripten row read 6.0.6 when this was first written and 6.0.7 builds
+identically, so track `emsdk install latest` rather than chasing an exact
+number.
 
 Hazard3 itself is a **pinned submodule** (`third_party/hazard3`, commit
 `8af99293`) and is never edited — all coupling to it lives in files we own.
+
+### Pointing the build at your emsdk
+
+The two WASM scripts do not hard-code a path. `scripts/toolchain.sh` resolves
+`em++` and takes the **first** of these that exists:
+
+| | How | When you'd use it |
+|---|---|---|
+| 1 | `EMXX=/path/to/em++` | You have one `em++` and know exactly where it is |
+| 2 | `EMSDK=/path/to/emsdk` | An emsdk checkout somewhere other than `/opt/emsdk` |
+| 3 | `em++` on `PATH` | You ran `source /path/to/emsdk/emsdk_env.sh` |
+| 4 | `/opt/emsdk` | The default, and what the install steps below produce |
+
+So an emsdk in your home directory needs no edits to any script:
+
+```bash
+EMSDK=~/emsdk ./scripts/build-wasm.sh
+EMSDK=~/emsdk ./scripts/build-wasm-lib.sh
+
+# or, for a whole shell:
+export EMSDK=~/emsdk
+./scripts/test.sh --build
+```
+
+`emsdk_env.sh` exports `EMSDK` itself and puts `em++` on `PATH`, so sourcing it
+satisfies rules 2 and 3 at once and nothing further is needed.
+
+If none of the four match, the build stops **before** verilating and prints
+every path it tried plus how to override — rather than failing several minutes
+later inside a compile. Verilator is resolved the same way, from `PATH`, with
+its include directory taken from `verilator --getenv VERILATOR_ROOT` rather
+than guessed, so a hand-built Verilator works unchanged.
 
 ## What was built (clean-slate, not the upstream testbench)
 
@@ -43,11 +83,19 @@ fights Emscripten. So Layer A is our own:
 
 ## Build & run
 
+The exact sequence, from `git clone` to a green `./scripts/test.sh`. Each step
+is independent of the ones after it, so a failure localises.
+
 ```bash
+# 0. the RTL. This is a submodule and the clone does NOT bring it:
+git submodule update --init third_party/hazard3
+
 # 1. one-time: toolchains
 sudo apt install -y verilator gcc-riscv64-unknown-elf
-git clone https://github.com/emscripten-core/emsdk /opt/emsdk
+git clone --depth 1 https://github.com/emscripten-core/emsdk /opt/emsdk
 (cd /opt/emsdk && ./emsdk install latest && ./emsdk activate latest)
+#   installing elsewhere is fine — see "Pointing the build at your emsdk" above,
+#   then prefix the WASM steps below with EMSDK=/your/path
 
 # 2. a test program  ->  programs/hello/build/hello.bin
 ./programs/build.sh hello
@@ -55,11 +103,70 @@ git clone https://github.com/emscripten-core/emsdk /opt/emsdk
 # 3a. native (fast correctness oracle) -> build/native/hz3_sim + hz3_test
 ./scripts/build-native.sh
 ./build/native/hz3_sim --bin programs/hello/build/hello.bin
+./build/native/hz3_test
 
-# 3b. WASM for Node -> build/wasm/hz3_sim.{cjs,wasm}
+# 3b. WASM CLI, the differential oracle -> build/wasm/hz3_sim.cjs
 ./scripts/build-wasm.sh
 node build/wasm/hz3_sim.cjs --bin programs/hello/build/hello.bin
+
+# 3c. WASM library for Node and the browser -> build/wasm/hz3.mjs + hz3.wasm
+./scripts/build-wasm-lib.sh
+
+# 4. the TypeScript, then everything at once
+npm install
+./scripts/test.sh
 ```
+
+Expected at the end of step 4 — `test.sh` runs the four suites and reports
+each; anything not built is skipped rather than failed, so a partial checkout
+still gives useful output:
+
+```
+17 passed, 0 failed      # native C++: probe, snapshot, write tracker
+45 passed, 0 failed      # TypeScript: core, viz, CLI, and the WASM bridge
+== native vs wasm differential ==
+  identical output, exit code and cycle count
+all suites passed
+```
+
+Rough costs on a clean machine: the emsdk install downloads ~330 MB and
+occupies ~1.7 GB (it brings its own Node and LLVM); each `verilator --cc` +
+`em++` pass takes a couple of minutes, and the two WASM scripts verilate
+separately into `obj_dir` and `obj_dir_lib`, so a from-scratch
+`test.sh --build` pays that twice. The native build is much faster and is the
+right thing to iterate against.
+
+### Issues hit on a clean checkout
+
+Each of these cost time on a fresh Ubuntu 24.04 machine and none are
+self-explanatory from the error:
+
+- **The submodule is empty until you ask for it.** `third_party/hazard3` is a
+  registered submodule with nothing in it after a plain `git clone`. Skipping
+  step 0 fails inside *our* RTL rather than at the obviously-missing directory:
+
+  ```
+  %Error: rtl/hz3_top.v:66:10: Cannot find include file: hazard3_config_inst.vh
+  ```
+
+  which reads like a bug in `rtl/hz3_top.v` — the include is Hazard3's, and the
+  fix is `git submodule update --init third_party/hazard3`.
+- **`emsdk install latest` is not quick.** It fetches a ~300 MB LLVM/wasm
+  binary tarball and a private Node before it prints anything useful. `git
+  clone --depth 1` on emsdk itself saves a further several hundred MB of
+  history that the SDK never uses.
+- **emsdk installs its own Node (24.x) and it does not become yours.** The
+  build calls `em++` by absolute path and the project's own scripts keep using
+  whatever `node` is on `PATH` (22.x here). The two coexist; there is nothing
+  to reconcile, and `emsdk activate` does not need `--permanent`.
+- **Build the test program before running the test suite.** The native/WASM
+  differential needs `programs/hello/build/hello.bin`, and without it `test.sh`
+  reports `differential: skipped` — which is easy to read as a pass, because
+  the run still ends in `all suites passed`.
+- **A missing `em++` used to surface late.** The scripts took
+  `/opt/emsdk/upstream/emscripten/em++` on faith, so a machine without it
+  verilated for a minute or two and then died on "No such file or directory".
+  `scripts/toolchain.sh` now checks first and says what to set.
 
 ## Workarounds (the reproducible versions)
 

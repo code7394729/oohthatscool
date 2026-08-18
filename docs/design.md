@@ -305,6 +305,13 @@ Verilog → C++ → WASM, in two clean stages. The Emscripten step is where the
 "small workarounds" live — here they are, named, so they're a checklist and not a
 surprise.
 
+> The sketch below is the design intent. For the pipeline **as built** — the
+> real file names, the flags actually passed, how to point the build at an
+> emsdk anywhere on disk, and the issues a clean checkout runs into — see
+> [`bringup.md`](bringup.md). `scripts/build-native.sh`,
+> `scripts/build-wasm.sh` and `scripts/build-wasm-lib.sh` are the executable
+> version of this section.
+
 ```bash
 # 1 · Verilate the core + our probe → C++ (no VCD in the browser build)
 verilator --cc --Mdir build/obj -O2 \

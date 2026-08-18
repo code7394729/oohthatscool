@@ -27,11 +27,15 @@ cycle, because it's the actual core, not a toy model.
 
 ## Quick start
 
+Verified end to end on Ubuntu 24.04 with Verilator 5.020, RISC-V GCC 13.2,
+Emscripten 6.0.7 and Node 22.
+
 ```bash
+git submodule update --init third_party/hazard3           # pull Hazard3 — required
 sudo apt install -y verilator gcc-riscv64-unknown-elf     # toolchains
-git clone https://github.com/emscripten-core/emsdk /opt/emsdk
+
+git clone --depth 1 https://github.com/emscripten-core/emsdk /opt/emsdk
 (cd /opt/emsdk && ./emsdk install latest && ./emsdk activate latest)
-git submodule update --init third_party/hazard3           # pull Hazard3
 
 ./programs/build.sh hello        # build a test program
 ./scripts/build-native.sh        # native: hz3_sim + hz3_test
@@ -41,13 +45,38 @@ git submodule update --init third_party/hazard3           # pull Hazard3
 node build/wasm/hz3_sim.cjs --bin programs/hello/build/hello.bin
 # -> Hello, world from Hazard3 running in WebAssembly!
 
+npm install
 ./scripts/test.sh                # every suite, plus the native/WASM differential
 ```
+
+`git clone` does **not** bring the submodule down with it, so the first line is
+not optional — without it Verilator stops on `Cannot find include file:
+hazard3_config_inst.vh`, which points at our `rtl/hz3_top.v` rather than at the
+empty `third_party/hazard3`.
+
+### Using an emsdk somewhere other than `/opt/emsdk`
+
+Nothing is hard-coded. Set `EMSDK` to your checkout and the WASM builds find
+`em++` inside it:
+
+```bash
+EMSDK=~/emsdk ./scripts/build-wasm.sh
+EMSDK=~/emsdk ./scripts/build-wasm-lib.sh
+
+export EMSDK=~/emsdk            # or set it once for the shell
+```
+
+Sourcing emsdk's own `emsdk_env.sh` works too — it exports `EMSDK` and puts
+`em++` on `PATH`, either of which the build accepts. To name a single compiler
+directly, set `EMXX=/path/to/em++`, which wins over everything else. The full
+resolution order — `EMXX`, then `EMSDK`, then `PATH`, then `/opt/emsdk` — and
+the failure message that lists it are in
+[`docs/bringup.md`](docs/bringup.md#pointing-the-build-at-your-emsdk) and
+implemented once in `scripts/toolchain.sh`.
 
 Then the page:
 
 ```bash
-npm install
 npm run dev                      # tsc --watch + dev server on http://localhost:8080
 ```
 
