@@ -10,13 +10,30 @@
 #                        which is what keeps the port honest
 #
 # Anything not built is reported and skipped rather than failing, so this is
-# usable on a partial checkout. Pass --build to build everything first.
+# usable on a partial checkout.
+#
+#   --build    build everything first
+#   --strict   treat a skipped suite as a failure
+#
+# --strict is what CI runs: on a partial checkout "skipped" is the useful
+# answer, but on a machine that is supposed to have built everything it is a
+# failure wearing a friendly word — a suite that never ran cannot pass.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-if [ "${1:-}" = "--build" ]; then
+build=0
+strict=0
+for arg in "$@"; do
+	case "$arg" in
+		--build)  build=1 ;;
+		--strict) strict=1 ;;
+		*) echo "usage: test.sh [--build] [--strict]" >&2; exit 2 ;;
+	esac
+done
+
+if [ "$build" = 1 ]; then
 	./scripts/build-native.sh   > /dev/null || exit 1
 	./scripts/build-wasm-lib.sh > /dev/null || exit 1
 	./scripts/build-wasm.sh     > /dev/null || exit 1
@@ -30,22 +47,33 @@ run() {
 	"$@" || status=1
 }
 
+# A suite that could not run. Under --strict that is a failure, not a note.
+skip() {
+	echo
+	if [ "$strict" = 1 ]; then
+		echo "== $1: MISSING ($2) =="
+		status=1
+	else
+		echo "== $1: skipped ($2) =="
+	fi
+}
+
 if [ -d node_modules/typescript ]; then
 	run "typescript build" npx tsc -b
 else
-	echo "== typescript: skipped (run npm install) =="
+	skip "typescript" "run npm install"
 fi
 
 if [ -x build/native/hz3_test ]; then
 	run "native probe + snapshot tests" ./build/native/hz3_test
 else
-	echo "== native tests: skipped (run ./scripts/build-native.sh) =="
+	skip "native tests" "run ./scripts/build-native.sh"
 fi
 
 if [ -f dist/test/run.js ]; then
 	run "typescript tests" node dist/test/run.js
 else
-	echo "== typescript tests: skipped (run npm install && npm run build) =="
+	skip "typescript tests" "run npm install && npm run build"
 fi
 
 # Differential: the two builds must agree exactly, down to the cycle.
@@ -63,8 +91,7 @@ if [ -x build/native/hz3_sim ] && [ -f build/wasm/hz3_sim.cjs ] && \
 		status=1
 	fi
 else
-	echo
-	echo "== differential: skipped (needs both builds and programs/hello) =="
+	skip "differential" "needs both builds and programs/hello"
 fi
 
 echo

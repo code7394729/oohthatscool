@@ -1,0 +1,129 @@
+# CI — build the simulator the same way a person would, then run every suite.
+#
+# Two jobs, split by what they cost rather than by what they cover:
+#
+#   typescript   No Verilator, no Emscripten, no submodule. Under a minute, and
+#                it catches the majority of ordinary mistakes.
+#   simulator    The real thing: Verilate the core, build it natively and twice
+#                for WASM, and run all four suites including the native-vs-WASM
+#                differential — the check that says the WASM port is faithful
+#                rather than merely compiling.
+#
+# The heavy job deliberately installs Emscripten somewhere other than
+# /opt/emsdk and points the build at it with EMSDK, so the toolchain resolution
+# in scripts/toolchain.sh is exercised by every run instead of being a
+# documented claim nobody tests.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch makes an in-flight run irrelevant.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned rather than `latest`: an upstream Emscripten release should not be
+  # able to turn CI red on an unrelated pull request, and a green run should
+  # stay reproducible. Bumping this line is the upgrade. docs/bringup.md tracks
+  # the version this was last verified against.
+  EMSDK_VERSION: '6.0.7'
+  NODE_VERSION: '22'
+
+jobs:
+  typescript:
+    name: TypeScript
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      # --force because the checkout has no .tsbuildinfo to be incremental
+      # against, and we want the typecheck to be unambiguous rather than fast.
+      - name: Typecheck
+        run: npx tsc -b --force
+
+      # The tier that needs neither WASM nor a DOM: blink policy, decoders,
+      # renderers, the datapath model / layout / scene / bindings, the
+      # in-page assembler.
+      - name: Pure test tier
+        run: node dist/test/run.js --pure
+
+  simulator:
+    name: Simulator (native + WASM)
+    runs-on: ubuntu-24.04
+    steps:
+      # Non-recursive on purpose: we need third_party/hazard3, and Hazard3 in
+      # turn declares six submodules of its own (its test suites, fpgascripts,
+      # riscv-formal) that this build never touches.
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install Verilator and the RISC-V toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            verilator gcc-riscv64-unknown-elf
+          verilator --version
+          riscv64-unknown-elf-gcc --version | head -1
+
+      # Installed outside /opt and reached through EMSDK — see the note at the
+      # top of this file. emsdk's config is written with $CFGDIR-relative
+      # paths, so an SDK anywhere on disk is self-contained and needs no
+      # emsdk_env.sh sourcing for the build scripts to use it.
+      - name: Install Emscripten ${{ env.EMSDK_VERSION }}
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk \
+            "$RUNNER_TEMP/emsdk"
+          cd "$RUNNER_TEMP/emsdk"
+          ./emsdk install "$EMSDK_VERSION"
+          ./emsdk activate "$EMSDK_VERSION"
+          echo "EMSDK=$RUNNER_TEMP/emsdk" >> "$GITHUB_ENV"
+
+      - run: npm ci
+
+      - name: Build the test program
+        run: ./programs/build.sh hello
+
+      - name: Build native (hz3_sim + hz3_test)
+        run: ./scripts/build-native.sh
+
+      - name: Build WASM CLI (the differential oracle)
+        run: ./scripts/build-wasm.sh
+
+      - name: Build WASM library (Node + browser)
+        run: ./scripts/build-wasm-lib.sh
+
+      # --strict: a suite that could not run is a failure here. test.sh's
+      # default is to skip politely, which is right on a partial checkout and
+      # wrong on a machine that just built everything.
+      - name: Run every suite
+        run: ./scripts/test.sh --strict
+
+      # Drives the WASM library through the TypeScript layer the page uses,
+      # which is the one path test.sh's differential does not cover: that
+      # compares the two standalone CLIs, not the Embind bridge behind them.
+      - name: Smoke-test the CLI over the WASM library
+        run: |
+          node dist/cli/hz3.js step --example loaduse --cycles 4
+          node dist/cli/hz3.js timeline --bin programs/hello/build/hello.bin

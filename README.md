@@ -1,5 +1,7 @@
 # Hazard3 Visualizer
 
+[![CI](https://github.com/code7394729/oohthatscool/actions/workflows/ci.yml/badge.svg)](https://github.com/code7394729/oohthatscool/actions/workflows/ci.yml)
+
 An interactive teaching tool for undergraduate ECE: run the **real
 [Hazard3](https://github.com/Wren6991/Hazard3) RISC-V core** — the 3-stage
 in-order machine shipping in the RP2350 / Raspberry Pi Pico 2 — in the browser
@@ -48,6 +50,12 @@ node build/wasm/hz3_sim.cjs --bin programs/hello/build/hello.bin
 npm install
 ./scripts/test.sh                # every suite, plus the native/WASM differential
 ```
+
+`./scripts/test.sh` skips suites whose build is missing, which is what you want
+on a partial checkout; pass `--strict` to make a skip a failure instead. CI runs
+the whole sequence above on every push and pull request —
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml), described in
+[`docs/bringup.md`](docs/bringup.md#what-ci-runs).
 
 `git clone` does **not** bring the submodule down with it, so the first line is
 not optional — without it Verilator stops on `Cannot find include file:
