@@ -15,11 +15,14 @@ H3="$ROOT/third_party/hazard3/hdl"
 BUILD="$ROOT/build/wasm"
 OBJ="$BUILD/obj_dir_lib"
 
-EMXX="${EMXX:-/opt/emsdk/upstream/emscripten/em++}"
-VROOT="$(verilator --getenv VERILATOR_ROOT)"
-
+# shellcheck source=toolchain.sh
+source "$ROOT/scripts/toolchain.sh"
 # shellcheck source=rtl-files.sh
 source "$ROOT/scripts/rtl-files.sh"
+
+# EMXX / EMSDK / PATH / /opt/emsdk — see scripts/toolchain.sh.
+resolve_emxx
+resolve_vroot
 
 mkdir -p "$BUILD"
 

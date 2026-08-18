@@ -12,10 +12,13 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 H3="$ROOT/third_party/hazard3/hdl"
 BUILD="$ROOT/build/native"
 OBJ="$BUILD/obj_dir"
-VROOT="$(verilator --getenv VERILATOR_ROOT)"
 
+# shellcheck source=toolchain.sh
+source "$ROOT/scripts/toolchain.sh"
 # shellcheck source=rtl-files.sh
 source "$ROOT/scripts/rtl-files.sh"
+
+resolve_vroot
 
 mkdir -p "$BUILD"
 
