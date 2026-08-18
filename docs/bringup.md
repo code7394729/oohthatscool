@@ -19,7 +19,7 @@ Everything installs from stock Ubuntu 24.04 apt + emsdk; no hand-built tools.
 
 | Tool | Version | Source |
 |---|---|---|
-| Verilator | 5.020 | `apt install verilator` |
+| Verilator | 5.020, and 5.050 built from source | `apt install verilator` |
 | RISC-V GCC | 13.2.0 (`riscv64-unknown-elf-`) | `apt install gcc-riscv64-unknown-elf` |
 | Emscripten | 6.0.7 | emsdk (`/opt/emsdk` by default — see below) |
 | g++ | 13 | `build-essential` |
@@ -27,7 +27,8 @@ Everything installs from stock Ubuntu 24.04 apt + emsdk; no hand-built tools.
 | TypeScript | 5.9 | `npm install` |
 
 The versions above are the ones this was last built and tested against, end to
-end, on Ubuntu 24.04. Nothing is pinned tighter than "recent enough": the
+end, on Ubuntu 24.04. Verilator is the one where the version genuinely matters:
+see **Verilator versions** below. Nothing is pinned tighter than "recent enough": the
 Emscripten row read 6.0.6 when this was first written and 6.0.7 builds
 identically, so track `emsdk install latest` rather than chasing an exact
 number.
@@ -66,6 +67,32 @@ every path it tried plus how to override — rather than failing several minutes
 later inside a compile. Verilator is resolved the same way, from `PATH`, with
 its include directory taken from `verilator --getenv VERILATOR_ROOT` rather
 than guessed, so a hand-built Verilator works unchanged.
+
+### Verilator versions
+
+Ubuntu 24.04's `apt` ships **5.020**, which is what the quick start installs
+and what CI uses. The build also works on **5.050**, the latest release at the
+time of writing, and both produce a simulation that agrees cycle for cycle —
+the same 476 cycles for `hello`, and the native/WASM differential passes on
+each.
+
+Getting there needed one real fix. Everything between those versions that
+touches this build is written up under
+[Workarounds](#workarounds-the-reproducible-versions); the short version is
+that the newer runtime calls Linux CPU-affinity functions which Emscripten
+declares but does not implement, so the WASM link fails on three undefined
+symbols while the native build is unaffected. That is handled in
+`sim/vl_hooks.cpp`, and the list of Verilator runtime sources to link is now
+read out of Verilator's own generated makefile instead of being hard-coded, so
+a version that needs different ones does not need a script edit.
+
+Nothing here pins a Verilator version: `resolve_vroot` takes whatever is on
+`PATH` and asks it for its own include directory. To build against a
+source-built Verilator, put it first on `PATH`:
+
+```bash
+PATH=/opt/verilator-5.050/bin:$PATH ./scripts/build-wasm.sh
+```
 
 ## What was built (clean-slate, not the upstream testbench)
 
@@ -211,10 +238,45 @@ patched**, so a clean checkout builds with no manual fix-ups.
    single-threaded WASM anyway).
 
 2. **`VlThreadPool` undefined at link.** `verilated.cpp` references the thread
-   pool even in a single-threaded model. Fix: add **`verilated_threads.cpp`** to
-   the link. No `-pthread` — the model never spawns threads, so we keep the
-   single-threaded runtime and avoid the SharedArrayBuffer / COOP-COEP burden a
-   pthread build would impose on the eventual browser page.
+   pool even in a single-threaded model. Fix: link the runtime sources
+   Verilator asks for. It writes that list into the makefile it generates, as
+   `VM_GLOBAL_FAST` / `VM_GLOBAL_SLOW`, and `resolve_runtime_srcs` in
+   `scripts/toolchain.sh` reads it back with `make` rather than hard-coding
+   names — which files are needed depends on the Verilator version and on what
+   the design uses. For this design both 5.020 and 5.050 answer
+   `verilated verilated_threads`. No `-pthread` — the model never spawns
+   threads, so we keep the single-threaded runtime and avoid the
+   SharedArrayBuffer / COOP-COEP burden a pthread build would impose on the
+   browser page.
+
+3. **CPU-affinity symbols undefined at link (Verilator after 5.020).** The
+   newer runtime asks the OS how many processors the process may use, and pins
+   its worker threads. It guards that with
+
+   ```c
+   #if defined(__linux) || defined(CPU_ZERO)
+   ```
+
+   Emscripten does not define `__linux`, but its musl-derived `<sched.h>` *does*
+   define `CPU_ZERO`, so the Linux arm is taken. Its `<pthread.h>` and
+   `<sched.h>` then *declare* `sched_getcpu()` and
+   `pthread_{get,set}affinity_np()` without the sysroot implementing any of
+   them — so it compiles cleanly and fails only at link:
+
+   ```
+   wasm-ld: error: verilated.o: undefined symbol: pthread_getaffinity_np
+   wasm-ld: error: verilated_threads.o: undefined symbol: sched_getcpu
+   wasm-ld: error: verilated_threads.o: undefined symbol: pthread_setaffinity_np
+   ```
+
+   Fix: define the three in `sim/vl_hooks.cpp` under `#ifdef __EMSCRIPTEN__`,
+   keeping it in a file we own rather than patching either toolchain.
+   `sched_getcpu()` returns 0 — there is one execution context, and the id only
+   labels profiling output. The two affinity calls return `ENOSYS`: WASM has no
+   affinity mask, Verilator documents 0 ("cannot be determined") as the result
+   of that failing, and its only caller is NUMA assignment for a worker pool
+   this build never creates. Should a future Emscripten implement them, the
+   link fails on a duplicate symbol rather than diverging quietly.
 
 Emscripten link flags of note: `-sNODERAWFS=1` (real filesystem + argv under
 Node, so the WASM build behaves like native), `-sALLOW_MEMORY_GROWTH=1` (the

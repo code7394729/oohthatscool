@@ -32,6 +32,10 @@ verilator --cc --top-module hz3_top -Wno-fatal \
 	-I"$H3" -I"$ROOT/rtl" --Mdir "$OBJ" \
 	"${RTL[@]}"
 
+# Which Verilator runtime sources this model needs — asked of Verilator's own
+# generated makefile rather than assumed. See scripts/toolchain.sh.
+resolve_runtime_srcs "$OBJ" Vhz3_top
+
 echo "== stage 2: em++ -> ES module =="
 # -DVL_IGNORE_UNKNOWN_ARCH : Verilator's verilatedos.h has no VL_CPU_RELAX() for
 #   wasm32 and hard-errors; this built-in escape hatch defines it empty. A spin
@@ -47,8 +51,7 @@ echo "== stage 2: em++ -> ES module =="
 	-DVL_USER_FINISH -DVL_USER_STOP -DVL_USER_FATAL \
 	-I"$OBJ" -I"$VROOT/include" -I"$VROOT/include/vltstd" -I"$ROOT/sim" \
 	"$OBJ"/*.cpp \
-	"$VROOT/include/verilated.cpp" \
-	"$VROOT/include/verilated_threads.cpp" \
+	"${RUNTIME_SRCS[@]}" \
 	"$ROOT/sim/vl_hooks.cpp" \
 	"$ROOT/sim/bridge.cpp" \
 	--bind --no-entry \
