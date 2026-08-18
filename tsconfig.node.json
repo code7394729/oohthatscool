@@ -1,0 +1,20 @@
+{
+  "//": [
+    "src/cli, src/test, src/server — everything that runs under Node.",
+    "It references the web project as well as core, because the test runner",
+    "exercises the pure half of the visualization (model, layout, scene,",
+    "bindings) without a browser."
+  ],
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src/cli/**/*.ts", "src/test/**/*.ts", "src/server/**/*.ts"],
+  "references": [
+    { "path": "./tsconfig.core.json" },
+    { "path": "./tsconfig.web.json" }
+  ]
+}

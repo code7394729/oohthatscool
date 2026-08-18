@@ -1,5 +1,5 @@
 /**
- * blink.mjs — turning register write events into something a student can see.
+ * blink.ts — turning register write events into something a student can see.
  *
  * THE PROBLEM
  *
@@ -37,58 +37,67 @@
  *
  * Nothing in this file touches the DOM, imports the simulator, or reads a
  * clock. It is a pure function of (snapshot, previous snapshot's write counts),
- * so the rendering policy can be unit-tested and tuned on synthetic data —
- * which is exactly what js/test/run.mjs does.
+ * so the rendering policy can be unit-tested and tuned on synthetic data.
  */
 
-/** @typedef {{value:number, writes:number, lastWriteCycle:number, lastReadCycle:number}} RegView */
+import { NEVER, type RegView } from './snapshot.js';
 
-/**
- * @typedef {object} BlinkOptions
- * @property {number} decayCycles  Cycles over which a write highlight fades to
- *   nothing. Six is about right at one cycle per step: long enough to read,
- *   short enough that consecutive instructions stay distinguishable.
- * @property {number} readDecayCycles  Reads are re-asserted every cycle the
- *   instruction sits in X, so their tail is deliberately shorter.
- */
+export interface BlinkOptions {
+	/**
+	 * Cycles over which a write highlight fades to nothing. Six is about right
+	 * at one cycle per step: long enough to read, short enough that consecutive
+	 * instructions stay distinguishable.
+	 */
+	decayCycles: number;
+	/**
+	 * Reads are re-asserted every cycle the instruction sits in X, so their tail
+	 * is deliberately shorter.
+	 */
+	readDecayCycles: number;
+}
 
-/** @type {BlinkOptions} */
-export const DEFAULT_BLINK_OPTIONS = Object.freeze({
+export const DEFAULT_BLINK_OPTIONS: Readonly<BlinkOptions> = Object.freeze({
 	decayCycles: 6,
 	readDecayCycles: 2,
 });
 
-/** Sentinel used by the simulator for "this has never happened". */
-export const NEVER = -1;
+export { NEVER };
 
 /**
  * Linear decay from 1 at age 0 to 0 at age >= span.
  *
- * @param {number} age    cycles since the event
- * @param {number} span   cycles over which it fades
- * @returns {number} 0..1
+ * @param age  cycles since the event
+ * @param span cycles over which it fades
  */
-export function decayLevel(age, span) {
+export function decayLevel(age: number, span: number): number {
 	if (!(span > 0)) return age === 0 ? 1 : 0;
 	if (age < 0) return 0;
 	if (age >= span) return 0;
 	return 1 - age / span;
 }
 
-/**
- * @typedef {object} RegBlink
- * @property {number}  index         register number, 0..31
- * @property {number}  value         current contents
- * @property {boolean} wrote         written since the previous frame, or recently enough to still be lit
- * @property {number}  writesDelta   architectural writes since the previous frame (0 if none)
- * @property {number}  writes        lifetime write count, straight from the core's write strobe
- * @property {number|null} ageCycles cycles since the last write, or null if never written
- * @property {number}  level         0..1 highlight intensity for the write
- * @property {0|1}     parity        flips on every write — toggle an attribute to retrigger an animation
- * @property {string}  key           changes on every write — use as a keyed element identity to restart one
- * @property {boolean} read          being read by the instruction in X this cycle
- * @property {number}  readLevel     0..1 highlight intensity for the read
- */
+export interface RegBlink {
+	/** Register number, 0..31. */
+	index: number;
+	value: number;
+	/** Written since the previous frame, or recently enough to still be lit. */
+	wrote: boolean;
+	/** Architectural writes since the previous frame. */
+	writesDelta: number;
+	/** Lifetime write count, straight from the core's write strobe. */
+	writes: number;
+	/** Cycles since the last write, or null if never written. */
+	ageCycles: number | null;
+	/** 0..1 highlight intensity for the write. */
+	level: number;
+	/** Flips on every write — toggle an attribute to retrigger an animation. */
+	parity: 0 | 1;
+	/** Changes on every write — use as a keyed identity to restart one. */
+	key: string;
+	/** Being read by the instruction in execute this cycle. */
+	read: boolean;
+	readLevel: number;
+}
 
 /**
  * Highlight state for a single register.
@@ -99,15 +108,14 @@ export function decayLevel(age, span) {
  * meaningless but `writesDelta` is 12 and the highlight goes to full. Pass null
  * for the first frame after a load or reset, when there is no previous frame
  * and nothing should be flagged as new.
- *
- * @param {RegView} reg
- * @param {number}  index
- * @param {number}  cycle       current cycle, from the snapshot
- * @param {number|null} prevWrites
- * @param {BlinkOptions} [opts]
- * @returns {RegBlink}
  */
-export function regBlink(reg, index, cycle, prevWrites, opts = DEFAULT_BLINK_OPTIONS) {
+export function regBlink(
+	reg: RegView,
+	index: number,
+	cycle: number,
+	prevWrites: number | null,
+	opts: BlinkOptions = DEFAULT_BLINK_OPTIONS,
+): RegBlink {
 	const writes = reg.writes;
 	const writesDelta = prevWrites === null || prevWrites === undefined
 		? 0
@@ -119,13 +127,13 @@ export function regBlink(reg, index, cycle, prevWrites, opts = DEFAULT_BLINK_OPT
 	// Two independent reasons to be lit, and the stronger one wins:
 	//   - recency: the write is still inside its decay window
 	//   - novelty: it happened since the viewer last looked, however long ago
-	const byAge = everWritten ? decayLevel(ageCycles, opts.decayCycles) : 0;
+	const byAge = ageCycles === null ? 0 : decayLevel(ageCycles, opts.decayCycles);
 	const byDelta = writesDelta > 0 ? 1 : 0;
 	const level = Math.max(byAge, byDelta);
 
 	const everRead = reg.lastReadCycle !== NEVER;
 	const readAge = everRead ? cycle - reg.lastReadCycle : null;
-	const readLevel = everRead ? decayLevel(readAge, opts.readDecayCycles) : 0;
+	const readLevel = readAge === null ? 0 : decayLevel(readAge, opts.readDecayCycles);
 
 	return {
 		index,
@@ -139,7 +147,7 @@ export function regBlink(reg, index, cycle, prevWrites, opts = DEFAULT_BLINK_OPT
 		// they change on every write and only on a write. A renderer that keys a
 		// CSS animation off `key` gets a genuine re-blink even when a register is
 		// written on ten consecutive cycles with the same data.
-		parity: /** @type {0|1} */ (writes & 1),
+		parity: (writes & 1) as 0 | 1,
 		key: `r${index}:${writes}`,
 		read: readLevel > 0,
 		readLevel,
@@ -155,25 +163,22 @@ export function regBlink(reg, index, cycle, prevWrites, opts = DEFAULT_BLINK_OPT
  * ten thousand cycles and still be told precisely which registers moved.
  */
 export class BlinkTracker {
-	/** @param {Partial<BlinkOptions>} [opts] */
-	constructor(opts = {}) {
+	readonly options: BlinkOptions;
+	private prevWrites: number[] | null = null;
+	private prevCycle = -1;
+
+	constructor(opts: Partial<BlinkOptions> = {}) {
 		this.options = { ...DEFAULT_BLINK_OPTIONS, ...opts };
-		/** @type {number[]|null} */
-		this.prevWrites = null;
-		this.prevCycle = -1;
 	}
 
 	/** Forget history, so the next frame reports nothing as new. */
-	reset() {
+	reset(): void {
 		this.prevWrites = null;
 		this.prevCycle = -1;
 	}
 
-	/**
-	 * @param {{cycle:number, regs:RegView[]}} snapshot
-	 * @returns {RegBlink[]} one entry per register, in register order
-	 */
-	update(snapshot) {
+	/** One entry per register, in register order. */
+	update(snapshot: { cycle: number; regs: RegView[] }): RegBlink[] {
 		const { cycle, regs } = snapshot;
 
 		// A cycle count that went backwards means the machine was reset (or the
@@ -183,7 +188,7 @@ export class BlinkTracker {
 
 		const prev = this.prevWrites;
 		const out = regs.map((r, i) =>
-			regBlink(r, i, cycle, prev ? prev[i] : null, this.options));
+			regBlink(r, i, cycle, prev ? (prev[i] ?? null) : null, this.options));
 
 		this.prevWrites = regs.map((r) => r.writes);
 		this.prevCycle = cycle;
@@ -194,11 +199,8 @@ export class BlinkTracker {
 /**
  * Registers worth drawing attention to this frame, brightest first. Handy when
  * space is tight — a status line, a narrow panel — and for asserting in tests.
- *
- * @param {RegBlink[]} blinks
- * @returns {RegBlink[]}
  */
-export function activeBlinks(blinks) {
+export function activeBlinks(blinks: RegBlink[]): RegBlink[] {
 	return blinks
 		.filter((b) => b.index !== 0 && b.level > 0)
 		.sort((a, b) => b.level - a.level || a.index - b.index);

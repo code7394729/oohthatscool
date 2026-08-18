@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hazard3 Visualizer</title>
+<meta name="description" content="Step a real RISC-V core, one cycle at a time, and watch its pipeline.">
+<link rel="stylesheet" href="/web/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>🔬</text></svg>">
+</head>
+<body>
+
+<header class="topbar">
+  <h1>Hazard3 <span>visualizer</span></h1>
+  <p class="tagline">
+    A real RISC-V core — the one in the RP2350 — running in your browser, one cycle at a time.
+  </p>
+</header>
+
+<main>
+  <!--
+    Every element below is filled in by dist/viz/app.js. In particular the
+    datapath is *not* hand-authored SVG: it is generated at load time from the
+    component model in src/viz/model/datapath.ts and the geometry in
+    src/viz/layout/datapath-layout.ts. Editing the picture means editing those.
+  -->
+  <section id="stage" aria-label="datapath">
+    <div id="datapath" class="datapath-host">
+      <p class="loading">Loading the simulator…</p>
+    </div>
+    <div id="controls" class="controls"></div>
+  </section>
+
+  <aside id="side" aria-label="machine state"></aside>
+
+  <section id="below" aria-label="pipeline history"></section>
+</main>
+
+<footer class="footer">
+  <p>
+    The diagram is generated from a component model, not drawn by hand.
+    Hover any block or wire for what it is and which RTL signal it comes from.
+    <span class="keys">Keys: <kbd>→</kbd> step cycle · <kbd>Enter</kbd> step instruction ·
+    <kbd>Space</kbd> run/pause · <kbd>R</kbd> reset</span>
+  </p>
+</footer>
+
+<script type="module" src="/dist/viz/app.js"></script>
+<script type="module">
+  // Dev-server live reload. Harmless anywhere else: if the endpoint is not
+  // there the stream errors once and we stop, rather than retrying forever.
+  try {
+    const es = new EventSource('/__dev/reload');
+    es.onmessage = () => location.reload();
+    es.onerror = () => es.close();
+  } catch { /* no EventSource, or blocked: not important */ }
+</script>
+
+</body>
+</html>

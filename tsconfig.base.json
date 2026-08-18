@@ -1,0 +1,30 @@
+{
+  "//": [
+    "Shared compiler settings. There is no bundler in this project: tsc emits",
+    "native ES modules that the browser loads directly and Node runs directly,",
+    "which is why every relative import in src/ is written with an explicit",
+    "'.js' extension (the emitted name, not the source name)."
+  ],
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+
+    "strict": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "useUnknownInCatchVariables": true,
+
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "composite": true,
+    "skipLibCheck": true
+  }
+}

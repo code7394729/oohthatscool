@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # test.sh — run everything.
 #
-#   1. hz3_test          native C++: the probe, the snapshot, the write tracker
-#   2. js/test/run.mjs   JavaScript: blink policy, decoders, renderers, and the
+#   1. tsc -b            typecheck and build the TypeScript
+#   2. hz3_test          native C++: the probe, the snapshot, the write tracker
+#   3. dist/test/run.js  TypeScript: blink policy, decoders, renderers, the
+#                        datapath model / layout / scene / bindings, and the
 #                        WASM bridge driven from Node
-#   3. differential      the standalone WASM program against the native one,
+#   4. differential      the standalone WASM program against the native one,
 #                        which is what keeps the port honest
 #
 # Anything not built is reported and skipped rather than failing, so this is
@@ -28,13 +30,23 @@ run() {
 	"$@" || status=1
 }
 
+if [ -d node_modules/typescript ]; then
+	run "typescript build" npx tsc -b
+else
+	echo "== typescript: skipped (run npm install) =="
+fi
+
 if [ -x build/native/hz3_test ]; then
 	run "native probe + snapshot tests" ./build/native/hz3_test
 else
 	echo "== native tests: skipped (run ./scripts/build-native.sh) =="
 fi
 
-run "javascript tests" node js/test/run.mjs
+if [ -f dist/test/run.js ]; then
+	run "typescript tests" node dist/test/run.js
+else
+	echo "== typescript tests: skipped (run npm install && npm run build) =="
+fi
 
 # Differential: the two builds must agree exactly, down to the cycle.
 if [ -x build/native/hz3_sim ] && [ -f build/wasm/hz3_sim.cjs ] && \

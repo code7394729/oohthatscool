@@ -6,15 +6,17 @@ in-order machine shipping in the RP2350 / Raspberry Pi Pico 2 — in the browser
 via WebAssembly, and watch its live microarchitectural state animate onto an
 interactive SVG datapath.
 
-> **Status: state extraction working (M0–M2).** The real Hazard3 core runs
-> under Node.js via Verilator → WASM, and its live microarchitectural state —
-> pipeline occupancy, forwarding paths, stall causes, register writes — is
-> extracted from the RTL and available as a typed snapshot in C++ and
-> JavaScript, with test wrappers at both levels. No SVG yet.
+> **Status: the visualizer runs in the browser (M0–M4).** The real Hazard3 core
+> runs in WebAssembly, its live microarchitectural state is extracted from the
+> RTL, and an interactive datapath animates it cycle by cycle — with a
+> reservation table, a register panel and example programs assembled in the page.
 >
-> Design proposal: [`docs/design.md`](docs/design.md) · bring-up and toolchain
-> workarounds: [`docs/bringup.md`](docs/bringup.md) · how state gets out and how
-> register updates are indicated: [`docs/probe.md`](docs/probe.md).
+> [`docs/design.md`](docs/design.md) the design ·
+> [`docs/bringup.md`](docs/bringup.md) toolchain and Verilator→WASM workarounds ·
+> [`docs/probe.md`](docs/probe.md) how state gets out of the RTL, and how
+> register updates are indicated ·
+> [`docs/visualization.md`](docs/visualization.md) how the diagram is generated,
+> and the TypeScript toolchain.
 
 ## The idea
 
@@ -42,17 +44,41 @@ node build/wasm/hz3_sim.cjs --bin programs/hello/build/hello.bin
 ./scripts/test.sh                # every suite, plus the native/WASM differential
 ```
 
-Look at the machine from a terminal, no browser involved:
+Then the page:
 
 ```bash
-node js/cli/hz3.mjs step     --bin programs/hello/build/hello.bin --instructions 12
-node js/cli/hz3.mjs timeline --bin programs/hello/build/hello.bin   # reservation table
-node js/cli/hz3.mjs blink    --bin programs/hello/build/hello.bin   # register writes
+npm install
+npm run dev                      # tsc --watch + dev server on http://localhost:8080
+```
+
+Or look at the same machine from a terminal, no browser involved:
+
+```bash
+node dist/cli/hz3.js example                                         # the demo programs
+node dist/cli/hz3.js step     --example loaduse --cycles 16          # pipeline, per cycle
+node dist/cli/hz3.js timeline --bin programs/hello/build/hello.bin   # reservation table
+node dist/cli/hz3.js blink    --bin programs/hello/build/hello.bin   # register writes
 ```
 
 See [`docs/bringup.md`](docs/bringup.md) for the toolchain and the exact
 Verilator→Emscripten workarounds, and [`docs/probe.md`](docs/probe.md) for how
 internal state is extracted and how register updates are indicated.
+
+## How it fits together
+
+```
+third_party/hazard3/  pinned, never edited
+rtl/                  our top + the probe that pulls state out by hierarchical reference
+sim/                  the SoC, the snapshot, the Embind bridge, the native tests
+src/core/             portable TypeScript: snapshot types, blink policy, decode, timeline
+src/viz/              the page — model / layout / bindings / render, kept separate
+src/cli/ src/test/    the CLI and the test runner, over the same code the page uses
+web/                  index.html + the stylesheet, which owns all appearance
+```
+
+The datapath is generated at load time from a component model and a separate
+layout description — there is no `.svg` file in this repository. See
+[`docs/visualization.md`](docs/visualization.md).
 
 ## Read the design
 

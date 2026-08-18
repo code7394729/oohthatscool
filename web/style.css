@@ -1,0 +1,416 @@
+/*
+ * style.css — all appearance lives here.
+ *
+ * The renderer writes semantic state onto elements (data-state="stalled",
+ * data-emphasis="highlight", data-level="3") and this file decides what any of
+ * that looks like. Retheming the diagram, or building a high-contrast variant
+ * for a lecture hall projector, is a change to this file alone.
+ *
+ * THE BLINK, since it is the one genuinely non-obvious rule here:
+ * a CSS animation does not restart when you re-apply the same animation to an
+ * element that is already running it. A register written on ten consecutive
+ * cycles would therefore flash once and then glow steadily — indistinguishable
+ * from a register nothing is happening to. So there are two identical keyframe
+ * sets, `blink-a` and `blink-b`, and the renderer alternates `data-blink`
+ * between 0 and 1 on every write (from the write *count* parity, not the
+ * value). Swapping the animation forces a restart, every single time.
+ */
+
+:root {
+	color-scheme: dark;
+
+	--bg: #0f1216;
+	--bg-panel: #161b22;
+	--bg-raised: #1c232c;
+	--line: #2a323d;
+	--line-soft: #212832;
+
+	--fg: #dbe3ec;
+	--fg-dim: #8b97a7;
+	--fg-faint: #5c6675;
+
+	--accent: #4fa3ff;        /* live data */
+	--accent-soft: #2b5f96;
+	--warn: #f0a63c;          /* stalls and holds */
+	--flash: #ffd166;         /* a write happening now */
+	--good: #5ad19a;          /* forwarding: the interesting case */
+	--bubble: #45506080;
+
+	--mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+	--sans: system-ui, -apple-system, "Segoe UI", Inter, sans-serif;
+
+	--radius: 10px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+	margin: 0;
+	background: var(--bg);
+	color: var(--fg);
+	font: 15px/1.5 var(--sans);
+	-webkit-font-smoothing: antialiased;
+}
+
+/* ---- chrome ------------------------------------------------------------- */
+
+.topbar {
+	padding: 18px 24px 10px;
+	border-bottom: 1px solid var(--line-soft);
+}
+.topbar h1 {
+	margin: 0;
+	font-size: 20px;
+	font-weight: 650;
+	letter-spacing: -0.01em;
+}
+.topbar h1 span { color: var(--fg-dim); font-weight: 400; }
+.tagline { margin: 4px 0 0; color: var(--fg-dim); font-size: 13.5px; }
+
+main {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 340px;
+	grid-template-areas: "stage side" "below side";
+	gap: 16px;
+	padding: 16px 24px 24px;
+	align-items: start;
+}
+#stage { grid-area: stage; min-width: 0; }
+#side  { grid-area: side; display: flex; flex-direction: column; gap: 12px; }
+#below { grid-area: below; min-width: 0; }
+
+@media (max-width: 1100px) {
+	main { grid-template-columns: minmax(0, 1fr); grid-template-areas: "stage" "side" "below"; }
+	#side { flex-direction: row; flex-wrap: wrap; }
+	#side > * { flex: 1 1 300px; }
+}
+
+.footer {
+	padding: 8px 24px 28px;
+	color: var(--fg-faint);
+	font-size: 12.5px;
+	border-top: 1px solid var(--line-soft);
+}
+.keys { display: block; margin-top: 4px; }
+kbd {
+	font: 11px var(--mono);
+	background: var(--bg-raised);
+	border: 1px solid var(--line);
+	border-radius: 4px;
+	padding: 1px 5px;
+}
+
+.panel {
+	background: var(--bg-panel);
+	border: 1px solid var(--line-soft);
+	border-radius: var(--radius);
+	padding: 12px 14px;
+}
+.panel-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 12px;
+	margin-bottom: 10px;
+}
+.panel-head h2 {
+	margin: 0;
+	font-size: 12px;
+	font-weight: 600;
+	letter-spacing: 0.09em;
+	text-transform: uppercase;
+	color: var(--fg-dim);
+}
+
+/* ---- datapath ----------------------------------------------------------- */
+
+.datapath-host {
+	background: var(--bg-panel);
+	border: 1px solid var(--line-soft);
+	border-radius: var(--radius);
+	padding: 6px;
+}
+.datapath { display: block; width: 100%; height: auto; }
+.loading { color: var(--fg-dim); padding: 40px; text-align: center; }
+
+.band-bg { fill: #131820; stroke: var(--line-soft); stroke-width: 1; }
+.band-label {
+	fill: var(--fg-faint); font: 600 15px var(--sans); letter-spacing: 0.12em;
+}
+.band-sublabel { fill: var(--fg-faint); font: 11px var(--sans); opacity: 0.75; }
+
+/* Components. The shape is neutral until the bindings say otherwise. */
+.part-shape {
+	fill: var(--bg-raised);
+	stroke: var(--line);
+	stroke-width: 1.4;
+	transition: fill 140ms ease, stroke 140ms ease;
+}
+.shape-regfile, .shape-memory { fill: #1a222c; }
+.shape-source { fill: #182029; stroke-dasharray: 3 3; }
+.clock-mark { fill: var(--fg-faint); }
+.regfile-rule { stroke: var(--line); stroke-width: 1; opacity: 0.5; }
+
+.part-label {
+	fill: var(--fg); font: 12.5px var(--sans); text-anchor: middle;
+	pointer-events: none;
+}
+.part-label-compact { font-size: 10px; fill: var(--fg-dim); }
+.part-sublabel {
+	fill: var(--fg-faint); font: 10.5px var(--sans); text-anchor: middle;
+	pointer-events: none;
+}
+.part-value {
+	fill: var(--accent); font: 10.5px var(--mono); text-anchor: middle;
+	pointer-events: none;
+}
+
+.part[data-state="idle"] .part-value { fill: var(--fg-faint); }
+.part[data-state="active"] .part-shape { stroke: var(--accent-soft); }
+.part[data-state="stalled"] .part-shape { stroke: var(--warn); fill: #241d10; }
+.part[data-state="stalled"] .part-value { fill: var(--warn); }
+.part[data-state="bubble"] .part-shape { stroke: var(--bubble); fill: #141920; }
+.part[data-state="bubble"] .part-label,
+.part[data-state="bubble"] .part-value { opacity: 0.45; }
+.part[data-state="writing"] .part-shape { stroke: var(--flash); fill: #2a2314; }
+.part[data-state="writing"] .part-value { fill: var(--flash); }
+
+/* Wires. Inactive is present but quiet: the structure is still information. */
+.wire {
+	fill: none;
+	stroke: var(--line);
+	stroke-width: 1.6;
+	transition: stroke 140ms ease, stroke-width 140ms ease;
+}
+.arrowhead { fill: var(--line); }
+.wire-junction { fill: var(--line); }
+.wire-label {
+	fill: var(--fg-faint); font: 9.5px var(--sans); text-anchor: middle;
+	pointer-events: none; opacity: 0;
+	transition: opacity 140ms ease;
+}
+.wire-value {
+	fill: var(--accent); font: 9.5px var(--mono); text-anchor: middle;
+	pointer-events: none; opacity: 0;
+	transition: opacity 140ms ease;
+}
+
+.net[data-kind="control"] .wire { stroke-dasharray: 4 3; stroke-width: 1.2; }
+
+.net[data-active="true"] .wire { stroke: var(--accent); stroke-width: 2; }
+.net[data-active="true"] .wire-junction { fill: var(--accent); }
+.net[data-active="true"] .wire-value { opacity: 1; }
+.net[data-active="true"] .wire-label { opacity: 0.8; }
+
+/* Forwarding, stalls and redirects are the phenomena the tool exists for, so
+   they get their own colour rather than just "on". */
+.net[data-emphasis="highlight"] .wire {
+	stroke: var(--good);
+	stroke-width: 2.6;
+	filter: drop-shadow(0 0 4px color-mix(in srgb, var(--good) 60%, transparent));
+}
+.net[data-emphasis="highlight"] .wire-value { fill: var(--good); }
+.net[data-emphasis="highlight"] .wire-junction { fill: var(--good); }
+
+/* The selected input of a mux, so the choice is visible and not just implied. */
+.part[data-type="mux"][data-selected="1"] .part-shape,
+.part[data-type="mux"][data-selected="2"] .part-shape { stroke: var(--good); }
+
+@media (prefers-reduced-motion: reduce) {
+	.part-shape, .wire, .wire-value, .wire-label { transition: none; }
+}
+
+/* ---- controls ----------------------------------------------------------- */
+
+.controls { margin-top: 12px; }
+.panel-transport { display: flex; flex-direction: column; gap: 10px; }
+.transport-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+.btn {
+	font: inherit; font-size: 13.5px;
+	color: var(--fg);
+	background: var(--bg-raised);
+	border: 1px solid var(--line);
+	border-radius: 7px;
+	padding: 6px 12px;
+	cursor: pointer;
+	transition: background 120ms ease, border-color 120ms ease;
+}
+.btn:hover { background: #232c37; border-color: #3a4553; }
+.btn:active { transform: translateY(1px); }
+.btn-primary { border-color: var(--accent-soft); color: var(--accent); }
+.btn-primary[data-running="true"] { background: #2a2314; border-color: var(--warn); color: var(--warn); }
+
+.program-select, .speed-select {
+	font: inherit; font-size: 13.5px;
+	color: var(--fg);
+	background: var(--bg-raised);
+	border: 1px solid var(--line);
+	border-radius: 7px;
+	padding: 6px 8px;
+}
+.program-select { flex: 1 1 220px; }
+.program-blurb { margin: 0; color: var(--fg-dim); font-size: 12.5px; }
+.watch-note {
+	margin: 10px 2px 0;
+	color: var(--fg-dim);
+	font-size: 13px;
+	line-height: 1.55;
+	max-width: 78ch;
+	border-left: 2px solid var(--accent-soft);
+	padding-left: 12px;
+}
+
+/* ---- pipeline status ---------------------------------------------------- */
+
+.stats { display: flex; gap: 14px; font: 12px var(--mono); color: var(--fg-dim); }
+.stat-value { color: var(--fg); }
+
+.stages { display: flex; flex-direction: column; gap: 4px; }
+.stage-row {
+	display: grid;
+	grid-template-columns: 14px 1fr;
+	grid-template-areas: "id name" "id pc" "id instr" "id note";
+	gap: 0 8px;
+	padding: 7px 9px;
+	border-radius: 7px;
+	background: var(--bg-raised);
+	border-left: 3px solid var(--line);
+	font-size: 12.5px;
+}
+.stage-id { grid-area: id; font: 600 13px var(--mono); color: var(--fg-faint); }
+.stage-name { grid-area: name; color: var(--fg-faint); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em; }
+.stage-pc { grid-area: pc; font: 11px var(--mono); color: var(--fg-dim); }
+.stage-instr { grid-area: instr; font: 12.5px var(--mono); color: var(--fg); }
+.stage-note { grid-area: note; font-size: 11.5px; color: var(--warn); }
+.stage-note:empty { display: none; }
+
+.stage-row[data-state="active"] { border-left-color: var(--accent); }
+.stage-row[data-state="stalled"] { border-left-color: var(--warn); }
+.stage-row[data-state="bubble"] { opacity: 0.55; }
+.stage-row[data-state="bubble"] .stage-instr { color: var(--fg-faint); }
+
+.why { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.why-item {
+	font-size: 12px; line-height: 1.45; color: var(--fg-dim);
+	background: #241d10; border-radius: 6px; padding: 6px 9px;
+}
+.why-item strong { color: var(--warn); font-weight: 600; }
+.why-none { background: transparent; padding: 0 2px; color: var(--fg-faint); }
+
+/* ---- registers ---------------------------------------------------------- */
+
+.reg-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 3px; }
+
+.reg-cell {
+	display: grid;
+	grid-template-columns: 34px 1fr auto;
+	align-items: baseline;
+	gap: 6px;
+	padding: 3px 6px;
+	border-radius: 5px;
+	border: 1px solid transparent;
+	font: 11.5px var(--mono);
+	/* The steady-state fade. data-level quantises the decay ramp so this
+	   transitions a handful of times per write rather than every frame. */
+	background: color-mix(in srgb, var(--flash) calc(var(--lvl, 0) * 1%), transparent);
+	transition: background 220ms ease, border-color 160ms ease;
+}
+.reg-cell[data-level="0"] { --lvl: 0; }
+.reg-cell[data-level="1"] { --lvl: 6; }
+.reg-cell[data-level="2"] { --lvl: 12; }
+.reg-cell[data-level="3"] { --lvl: 20; }
+
+.reg-name { color: var(--fg-faint); }
+.reg-value { color: var(--fg); }
+.reg-writes { color: var(--fg-faint); font-size: 10px; opacity: 0.7; }
+
+.reg-cell[data-read="true"] { border-color: var(--accent-soft); }
+.reg-cell[data-level="3"] .reg-value { color: var(--flash); }
+
+/* The restart trick: two identical animations, alternated on every write. */
+@keyframes blink-a {
+	0%   { background-color: color-mix(in srgb, var(--flash) 62%, transparent); }
+	100% { background-color: transparent; }
+}
+@keyframes blink-b {
+	0%   { background-color: color-mix(in srgb, var(--flash) 62%, transparent); }
+	100% { background-color: transparent; }
+}
+.reg-cell[data-blink="0"] { animation: blink-a 480ms ease-out; }
+.reg-cell[data-blink="1"] { animation: blink-b 480ms ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+	.reg-cell { transition: none; }
+	.reg-cell[data-blink="0"], .reg-cell[data-blink="1"] { animation: none; }
+	.reg-cell[data-level="3"] { outline: 2px solid var(--flash); }
+}
+
+.seg { display: flex; gap: 2px; }
+.seg-btn {
+	font: 10.5px var(--sans);
+	color: var(--fg-faint);
+	background: transparent;
+	border: 1px solid var(--line-soft);
+	border-radius: 5px;
+	padding: 2px 7px;
+	cursor: pointer;
+}
+.seg-btn[aria-pressed="true"] { color: var(--fg); border-color: var(--accent-soft); background: var(--bg-raised); }
+
+/* ---- CSRs and console --------------------------------------------------- */
+
+.csr-list {
+	display: grid; grid-template-columns: auto 1fr; gap: 2px 12px;
+	margin: 0; font: 11.5px var(--mono);
+}
+.csr-name { color: var(--fg-faint); }
+.csr-value { margin: 0; color: var(--fg); }
+
+.console-output {
+	margin: 0;
+	min-height: 3.4em;
+	max-height: 9em;
+	overflow: auto;
+	white-space: pre-wrap;
+	word-break: break-word;
+	font: 11.5px/1.5 var(--mono);
+	color: var(--good);
+	background: #10151b;
+	border-radius: 6px;
+	padding: 8px 10px;
+}
+
+/* ---- reservation table -------------------------------------------------- */
+
+.panel-timeline { overflow-x: auto; }
+.timeline-table { border-collapse: collapse; font: 11px var(--mono); }
+.tl-label {
+	text-align: left; font-weight: 400; padding-right: 12px; white-space: nowrap;
+	position: sticky; left: 0; background: var(--bg-panel);
+}
+.tl-pc { color: var(--fg-faint); margin-right: 8px; }
+.tl-instr { color: var(--fg-dim); }
+.tl-cycle { color: var(--fg-faint); font-weight: 400; font-size: 9.5px; text-align: center; min-width: 15px; }
+.tl-cell {
+	width: 15px; height: 17px; text-align: center; color: transparent;
+	border-radius: 3px;
+}
+.tl-cell[data-cell="X"] { background: var(--accent); color: #06121f; font-weight: 600; }
+.tl-cell[data-cell="x"] { background: var(--warn); color: #241a06; font-weight: 600; }
+.tl-cell[data-cell="M"] { background: var(--accent-soft); color: #dbe3ec; }
+.tl-cell[data-cell="m"] { background: #6b5320; color: #f0e2c6; }
+
+.legend { font: 10.5px var(--sans); color: var(--fg-faint); }
+.legend-item {
+	display: inline-block; width: 15px; text-align: center; border-radius: 3px;
+	font: 10px var(--mono); margin: 0 2px;
+}
+.legend-item[data-cell="X"] { background: var(--accent); color: #06121f; }
+.legend-item[data-cell="x"] { background: var(--warn); color: #241a06; }
+.legend-item[data-cell="M"] { background: var(--accent-soft); color: var(--fg); }
+
+.timeline-warning { margin-top: 8px; color: var(--warn); font-size: 12px; }
+
+.fatal { padding: 40px; text-align: center; color: var(--warn); }
+.fatal pre { color: var(--fg-dim); font-size: 12px; white-space: pre-wrap; }

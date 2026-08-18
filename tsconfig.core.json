@@ -1,0 +1,16 @@
+{
+  "//": [
+    "src/core — the shared simulation-facing code.",
+    "Compiled with NO dom and NO node types on purpose: this layer must stay",
+    "usable from the browser, the Node CLI and the test runner alike, and the",
+    "compiler is what enforces that rather than a convention nobody checks."
+  ],
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": [],
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src/core/**/*.ts"]
+}

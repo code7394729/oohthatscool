@@ -102,5 +102,5 @@ Node, so the WASM build behaves like native), `-sALLOW_MEMORY_GROWTH=1` (the
 
 Done since: the **probe wrapper + snapshot** and the **Embind bridge** — see
 [`probe.md`](probe.md). What remains is the SVG datapath (M3) and the panels and
-transport around it (M4); `js/src/render-text.mjs` already computes the derived
+transport around it (M4); `src/core/render-text.ts` already computes the derived
 state those need, with the pixels left off.

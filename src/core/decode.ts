@@ -1,5 +1,5 @@
 /**
- * decode.mjs — names for the raw encodings a snapshot carries, and a small
+ * decode.ts — names for the raw encodings a snapshot carries, and a small
  * RV32IM disassembler.
  *
  * The snapshot deliberately ships the core's own encodings (`aluOp`, `memOp`,
@@ -10,26 +10,49 @@
  * alike.
  *
  * STALL_BITS and BYPASS_NAMES mirror constants defined in rtl/hz3_probe.vh and
- * sim/snapshot.h. js/test/run.mjs checks the stall table against the string the
+ * sim/snapshot.h. The test runner checks the stall table against the string the
  * C++ side emits, so the two cannot drift apart silently.
  */
 
+import { Bypass, Stall, type BypassCode } from './snapshot.js';
+
+export interface StallBit {
+	bit: number;
+	id: string;
+	label: string;
+	blurb: string;
+}
+
 /** Bit positions of the stall-cause bitmap, LSB first. */
-export const STALL_BITS = Object.freeze([
-	{ bit: 1 << 0, id: 'downstream-m', label: 'M stage busy',
-	  blurb: 'The memory/writeback stage cannot accept a new instruction.' },
-	{ bit: 1 << 1, id: 'load-use', label: 'load-use interlock',
-	  blurb: 'The next instruction needs a load result that has not arrived yet — the one hazard forwarding cannot fix.' },
-	{ bit: 1 << 2, id: 'muldiv', label: 'multiply/divide',
-	  blurb: 'The sequential multiply/divide unit is still working; execute waits for it.' },
-	{ bit: 1 << 3, id: 'fence', label: 'fence',
-	  blurb: 'Waiting for outstanding memory accesses to complete.' },
-	{ bit: 1 << 4, id: 'bus-address-phase', label: 'bus busy',
-	  blurb: 'The load/store address phase has not been accepted by the bus.' },
-	{ bit: 1 << 5, id: 'jump-not-ready', label: 'jump not accepted',
-	  blurb: 'The front end is not ready to take the new program counter.' },
-	{ bit: 1 << 6, id: 'starved', label: 'no instruction',
-	  blurb: 'The front end has not delivered an instruction — usually the shadow of a taken branch.' },
+export const STALL_BITS: readonly StallBit[] = Object.freeze([
+	{
+		bit: Stall.MStall, id: 'downstream-m', label: 'M stage busy',
+		blurb: 'The memory/writeback stage cannot accept a new instruction.',
+	},
+	{
+		bit: Stall.Raw, id: 'load-use', label: 'load-use interlock',
+		blurb: 'The next instruction needs a load result that has not arrived yet — the one hazard forwarding cannot fix.',
+	},
+	{
+		bit: Stall.Muldiv, id: 'muldiv', label: 'multiply/divide',
+		blurb: 'The sequential multiply/divide unit is still working; execute waits for it.',
+	},
+	{
+		bit: Stall.Fence, id: 'fence', label: 'fence',
+		blurb: 'Waiting for outstanding memory accesses to complete.',
+	},
+	{
+		bit: Stall.BusAphase, id: 'bus-address-phase', label: 'bus busy',
+		blurb: 'The load/store address phase has not been accepted by the bus.',
+	},
+	{
+		bit: Stall.Jump, id: 'jump-not-ready', label: 'jump not accepted',
+		blurb: 'The front end is not ready to take the new program counter.',
+	},
+	{
+		bit: Stall.Starved, id: 'starved', label: 'no instruction',
+		blurb: 'The front end has not delivered an instruction — usually the shadow of a taken branch.',
+	},
 ]);
 
 /**
@@ -42,11 +65,8 @@ const STALL_PRIORITY = [
 	'jump-not-ready', 'downstream-m', 'starved',
 ];
 
-/**
- * @param {number} cause bitmap from snapshot.x.stallCause
- * @returns {string} the same string the C++ side puts in `stallReason`
- */
-export function stallReasonName(cause) {
+/** The same string the C++ side puts in `stallReason`. */
+export function stallReasonName(cause: number): string {
 	if (!cause) return 'none';
 	for (const id of STALL_PRIORITY) {
 		const entry = STALL_BITS.find((e) => e.id === id);
@@ -58,79 +78,80 @@ export function stallReasonName(cause) {
 /**
  * Every cause currently asserted, not just the top one — several can be true
  * at once, and seeing that is often the explanation.
- *
- * @param {number} cause
- * @returns {typeof STALL_BITS[number][]}
  */
-export function stallCauses(cause) {
+export function stallCauses(cause: number): StallBit[] {
 	return STALL_BITS.filter((e) => (cause & e.bit) !== 0);
 }
 
 /** Operand source selected by the bypass network (sim/snapshot.h, enum Bypass). */
-export const BYPASS_NAMES = Object.freeze(['none', 'regfile', 'M', 'W']);
+export const BYPASS_NAMES = Object.freeze(['none', 'regfile', 'M', 'W'] as const);
 
-export const BYPASS_LABELS = Object.freeze({
+export const BYPASS_LABELS: Readonly<Record<string, string>> = Object.freeze({
 	none: 'no register operand',
 	regfile: 'read from the register file',
 	M: 'forwarded from the memory stage',
 	W: 'forwarded from writeback',
 });
 
-/** @param {number} b @returns {string} */
-export function bypassName(b) {
-	return BYPASS_NAMES[b] ?? 'unknown';
+export function bypassName(b: BypassCode | number): string {
+	return BYPASS_NAMES[b as number] ?? 'unknown';
 }
 
 /** Hazard3 memory-op encoding (hazard3_ops.vh). */
-export const MEMOP_NAMES = Object.freeze({
+export const MEMOP_NAMES: Readonly<Record<number, string>> = Object.freeze({
 	0x00: 'lw', 0x01: 'lh', 0x02: 'lb', 0x03: 'lhu', 0x04: 'lbu',
 	0x05: 'sw', 0x06: 'sh', 0x07: 'sb',
 	0x08: 'lr.w', 0x09: 'sc.w', 0x0a: 'amo',
 	0x10: 'none',
 });
 
-export const MEMOP_NONE = 0x10;
+export { MEMOP_NONE } from './snapshot.js';
 
-/** @param {number} m */
-export function memOpName(m) {
+export function memOpName(m: number): string {
 	return MEMOP_NAMES[m] ?? `0x${m.toString(16)}`;
 }
 
-/** @param {number} m */
-export function memOpIsLoad(m) {
+export function memOpIsLoad(m: number): boolean {
 	return m <= 0x04;
 }
 
-/** @param {number} m */
-export function memOpIsStore(m) {
+export function memOpIsStore(m: number): boolean {
 	return m >= 0x05 && m <= 0x07;
 }
 
 /** Hazard3 ALU-op encoding, restricted to what an RV32IM build can produce. */
-export const ALUOP_NAMES = Object.freeze({
+export const ALUOP_NAMES: Readonly<Record<number, string>> = Object.freeze({
 	0x00: 'add', 0x01: 'sub', 0x02: 'lt', 0x04: 'ltu', 0x06: 'and',
 	0x07: 'or', 0x08: 'xor', 0x09: 'srl', 0x0a: 'sra', 0x0b: 'sll',
 	0x0c: 'muldiv', 0x0d: 'rs2',
 });
 
-/** @param {number} a */
-export function aluOpName(a) {
+export function aluOpName(a: number): string {
 	return ALUOP_NAMES[a] ?? `0x${a.toString(16)}`;
+}
+
+/** Sequential multiply/divide operation (hazard3_ops.vh, M_OP_*). */
+export const MULOP_NAMES: Readonly<Record<number, string>> = Object.freeze({
+	0: 'mul', 1: 'mulh', 2: 'mulhsu', 3: 'mulhu',
+	4: 'div', 5: 'divu', 6: 'rem', 7: 'remu',
+});
+
+export function mulOpName(m: number): string {
+	return MULOP_NAMES[m] ?? `0x${m.toString(16)}`;
 }
 
 // ---------------------------------------------------------------------------
 // Registers
 
-export const ABI_NAMES = Object.freeze([
+export const ABI_NAMES: readonly string[] = Object.freeze([
 	'zero', 'ra', 'sp', 'gp', 'tp', 't0', 't1', 't2',
 	's0', 's1', 'a0', 'a1', 'a2', 'a3', 'a4', 'a5',
 	'a6', 'a7', 's2', 's3', 's4', 's5', 's6', 's7',
 	's8', 's9', 's10', 's11', 't3', 't4', 't5', 't6',
 ]);
 
-/** @param {number} n @param {boolean} [abi] */
-export function regName(n, abi = true) {
-	return abi ? ABI_NAMES[n] ?? `x${n}` : `x${n}`;
+export function regName(n: number, abi = true): string {
+	return abi ? (ABI_NAMES[n] ?? `x${n}`) : `x${n}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -141,35 +162,40 @@ export function regName(n, abi = true) {
 // certain can cross-check the two — if they ever disagree, the disassembler is
 // what is wrong, not the hardware.
 
-const BRANCH = ['beq', 'bne', null, null, 'blt', 'bge', 'bltu', 'bgeu'];
-const LOAD = ['lb', 'lh', 'lw', null, 'lbu', 'lhu'];
-const STORE = ['sb', 'sh', 'sw'];
-const OPIMM = ['addi', 'slli', 'slti', 'sltiu', 'xori', null, 'ori', 'andi'];
-const OP = ['add', 'sll', 'slt', 'sltu', 'xor', 'srl', 'or', 'and'];
-const MULDIV = ['mul', 'mulh', 'mulhsu', 'mulhu', 'div', 'divu', 'rem', 'remu'];
-const CSR_OPS = { 1: 'csrrw', 2: 'csrrs', 3: 'csrrc', 5: 'csrrwi', 6: 'csrrsi', 7: 'csrrci' };
+const BRANCH: (string | null)[] = ['beq', 'bne', null, null, 'blt', 'bge', 'bltu', 'bgeu'];
+const LOAD: (string | null)[] = ['lb', 'lh', 'lw', null, 'lbu', 'lhu'];
+const STORE: (string | null)[] = ['sb', 'sh', 'sw'];
+const OPIMM: (string | null)[] = ['addi', 'slli', 'slti', 'sltiu', 'xori', null, 'ori', 'andi'];
+const OP: string[] = ['add', 'sll', 'slt', 'sltu', 'xor', 'srl', 'or', 'and'];
+const MULDIV: string[] = ['mul', 'mulh', 'mulhsu', 'mulhu', 'div', 'divu', 'rem', 'remu'];
+const CSR_OPS: Record<number, string> = {
+	1: 'csrrw', 2: 'csrrs', 3: 'csrrc', 5: 'csrrwi', 6: 'csrrsi', 7: 'csrrci',
+};
 
-const CSR_NAMES = Object.freeze({
+const CSR_NAMES: Readonly<Record<number, string>> = Object.freeze({
 	0x300: 'mstatus', 0x304: 'mie', 0x305: 'mtvec', 0x320: 'mcountinhibit',
 	0x340: 'mscratch', 0x341: 'mepc', 0x342: 'mcause', 0x343: 'mtval',
 	0x344: 'mip', 0xb00: 'mcycle', 0xb02: 'minstret',
 	0xf11: 'mvendorid', 0xf12: 'marchid', 0xf13: 'mimpid', 0xf14: 'mhartid',
 });
 
-const sx = (v, bits) => (v << (32 - bits)) >> (32 - bits);
-const hex = (v) => (v < 0 ? '-0x' + (-v).toString(16) : '0x' + v.toString(16));
+const sx = (v: number, bits: number): number => (v << (32 - bits)) >> (32 - bits);
+const hex = (v: number): string => (v < 0 ? '-0x' + (-v).toString(16) : '0x' + v.toString(16));
+
+export interface DisasmOptions {
+	/** Use ABI register names (a0, sp) rather than x10, x2. */
+	abi?: boolean;
+}
 
 /**
  * Disassemble one RV32IM instruction.
  *
- * @param {number} word  the 32-bit instruction
- * @param {number} [pc]  its address, used to resolve branch and jump targets
- * @param {{abi?:boolean}} [opts]
- * @returns {string}
+ * @param word the 32-bit instruction
+ * @param pc   its address, used to resolve branch and jump targets
  */
-export function disasm(word, pc = 0, opts = {}) {
+export function disasm(word: number, pc = 0, opts: DisasmOptions = {}): string {
 	const abi = opts.abi !== false;
-	const r = (n) => regName(n, abi);
+	const r = (n: number) => regName(n, abi);
 
 	const w = word >>> 0;
 	const op = w & 0x7f;
@@ -249,7 +275,13 @@ export function disasm(word, pc = 0, opts = {}) {
 	return `.word ${hex(w)}`;
 }
 
-/** @param {number} v @param {number} [width] */
-export function hex32(v, width = 8) {
+export function hex32(v: number, width = 8): string {
 	return '0x' + (v >>> 0).toString(16).padStart(width, '0');
 }
+
+/** Signed interpretation of a 32-bit word, for the register panel's toggle. */
+export function asSigned(v: number): number {
+	return v | 0;
+}
+
+export { Bypass };

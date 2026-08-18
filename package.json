@@ -6,10 +6,20 @@
   "type": "module",
   "license": "Apache-2.0",
   "scripts": {
-    "test": "node js/test/run.mjs",
-    "test:pure": "node js/test/run.mjs --pure",
+    "build": "tsc -b",
+    "watch": "tsc -b --watch",
+    "clean": "tsc -b --clean",
+    "dev": "tsc -b && node dist/server/dev.js --watch",
+    "serve": "node dist/server/dev.js",
+    "test": "tsc -b && node dist/test/run.js",
+    "test:pure": "tsc -b && node dist/test/run.js --pure",
     "test:all": "./scripts/test.sh",
-    "hz3": "node js/cli/hz3.mjs"
+    "typecheck": "tsc -b --force",
+    "hz3": "node dist/cli/hz3.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
   },
   "engines": {
     "node": ">=18"

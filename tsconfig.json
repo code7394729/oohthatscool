@@ -1,0 +1,9 @@
+{
+  "//": "Solution file: `tsc -b` builds all three projects in dependency order.",
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.core.json" },
+    { "path": "./tsconfig.web.json" },
+    { "path": "./tsconfig.node.json" }
+  ]
+}

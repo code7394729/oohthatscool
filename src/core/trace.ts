@@ -1,5 +1,5 @@
 /**
- * trace.mjs — reading recorded snapshot traces.
+ * trace.ts — recorded snapshot traces.
  *
  * `hz3_sim --trace out.jsonl` writes one snapshot per line, in the same format
  * the WASM bridge produces. Replaying such a file gives the UI layers a real,
@@ -8,42 +8,31 @@
  * tested against a checked-in trace, and a failure can be reproduced from a file
  * instead of a sequence of clicks.
  *
- * The parsing half is pure. Only readTraceFile touches a filesystem, and it
- * imports node:fs lazily so this module stays loadable in a browser.
+ * Everything here is pure. Reading a file is the caller's business (see
+ * src/cli/hz3.ts), which keeps this module loadable in the browser.
  */
 
-/**
- * @param {string} text  JSONL, one snapshot per line
- * @returns {any[]}
- */
-export function parseTrace(text) {
-	const out = [];
+import type { Snapshot } from './snapshot.js';
+
+/** @param text JSONL, one snapshot per line. */
+export function parseTrace(text: string): Snapshot[] {
+	const out: Snapshot[] = [];
 	for (const line of text.split('\n')) {
 		const s = line.trim();
-		if (s) out.push(JSON.parse(s));
+		if (s) out.push(JSON.parse(s) as Snapshot);
 	}
 	return out;
-}
-
-/**
- * @param {string} path
- * @returns {Promise<any[]>}
- */
-export async function readTraceFile(path) {
-	const { readFile } = await import('node:fs/promises');
-	return parseTrace(await readFile(path, 'utf8'));
 }
 
 /**
  * Sanity-check a trace before anything trusts it. Cheap, and it turns "the
  * chart looks wrong" into a specific complaint about a specific cycle.
  *
- * @param {any[]} snapshots
- * @returns {string[]} problems found; empty means the trace is consistent
+ * @returns problems found; empty means the trace is consistent
  */
-export function validateTrace(snapshots) {
-	const problems = [];
-	let prev = null;
+export function validateTrace(snapshots: Snapshot[]): string[] {
+	const problems: string[] = [];
+	let prev: Snapshot | null = null;
 	for (const s of snapshots) {
 		if (typeof s.cycle !== 'number') { problems.push('snapshot without a cycle'); break; }
 		if (!Array.isArray(s.regs) || s.regs.length !== 32)
@@ -54,7 +43,8 @@ export function validateTrace(snapshots) {
 			if (s.retired < prev.retired)
 				problems.push(`cycle ${s.cycle}: retire count went backwards`);
 			for (let i = 0; i < 32; i++) {
-				if (s.regs[i].writes < prev.regs[i].writes)
+				const now = s.regs[i], before = prev.regs[i];
+				if (now && before && now.writes < before.writes)
 					problems.push(`cycle ${s.cycle}: x${i} write count went backwards`);
 			}
 		}
@@ -63,20 +53,23 @@ export function validateTrace(snapshots) {
 	return problems;
 }
 
+export interface WriteEvent {
+	cycle: number;
+	value: number;
+	writes: number;
+}
+
 /**
  * Every cycle at which a given register was written, from a trace. The write
  * count is what makes this exact: repeated writes of an unchanged value are
  * counted, which is precisely the case a value diff would miss.
- *
- * @param {any[]} snapshots
- * @param {number} reg
- * @returns {{cycle:number, value:number, writes:number}[]}
  */
-export function writeEvents(snapshots, reg) {
-	const out = [];
-	let prevWrites = null;
+export function writeEvents(snapshots: Snapshot[], reg: number): WriteEvent[] {
+	const out: WriteEvent[] = [];
+	let prevWrites: number | null = null;
 	for (const s of snapshots) {
 		const r = s.regs[reg];
+		if (!r) continue;
 		if (prevWrites !== null && r.writes > prevWrites)
 			out.push({ cycle: s.cycle, value: r.value, writes: r.writes });
 		prevWrites = r.writes;

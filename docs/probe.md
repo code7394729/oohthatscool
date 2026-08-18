@@ -5,8 +5,8 @@ the Verilated model, across the WASM boundary, and into shape for a UI — with
 as much of it as possible testable from a terminal.
 
 ```
-rtl/hz3_probe.vh ──► top-level ports ──► sim/snapshot.h ──► JSON ──┬─► js/  (browser, later)
-   hierarchical         Vhz3_top            plain struct           ├─► js/cli/hz3.mjs
+rtl/hz3_probe.vh ──► top-level ports ──► sim/snapshot.h ──► JSON ──┬─► src/viz/  (the page)
+   hierarchical         Vhz3_top            plain struct           ├─► src/cli/hz3.ts
    references           members                                    └─► *.jsonl trace file
 ```
 
@@ -65,8 +65,8 @@ exist in Hazard3:
 They are clocked on exactly the condition the core's own `xm_*` registers use
 (`!m_stall`) and cleared by the same bubble condition, so they cannot drift.
 `m_stage_shadow_tracks_the_instruction_leaving_x` in the test suite checks every
-handoff of a run against what X actually issued, and `buildTimeline` in the JS
-renderer re-derives the same thing independently and warns if the two disagree.
+handoff of a run against what X actually issued, and `buildTimeline` in
+`src/core/timeline.ts` re-derives the same thing independently and warns if the two disagree.
 
 ### Reading the register file
 
@@ -117,7 +117,7 @@ disagreeing.
 ### Raw encodings, named on the UI side
 
 The snapshot ships the core's own encodings (`aluOp`, `memOp`, `bypassA`,
-`stallCause`) rather than prose, and `js/src/decode.mjs` turns them into words.
+`stallCause`) rather than prose, and `src/core/decode.ts` turns them into words.
 The single exception is `stallReason`, which C++ also names — the native trace
 has to be legible on its own, and it gives the JS table something to be checked
 against. `this side names stall causes exactly as the simulator does` asserts
@@ -156,7 +156,7 @@ surfaced as `p_m_reg_wen` — sampled every cycle, never by comparing values.
 
 ### Three problems, three fields
 
-`sim/tracker.h` records the write events; `js/src/blink.mjs` decides what they
+`sim/tracker.h` records the write events; `src/core/blink.ts` decides what they
 look like. The split matters: rendering policy can be tuned and unit-tested
 without a simulator, a rebuild or a browser.
 
@@ -194,7 +194,7 @@ not are driven from two independently executable CLIs.
 ```
 ./scripts/test.sh            everything (add --build to build first)
 ./build/native/hz3_test      C++: probe, snapshot, tracker
-node js/test/run.mjs         JS: blink policy, decoders, renderers, WASM bridge
+node dist/test/run.js         JS: blink policy, decoders, renderers, WASM bridge
 ```
 
 ### `hz3_test` — the C++ wrapper
@@ -224,7 +224,7 @@ And it checks that every phenomenon the UI claims to show is actually
 observable: forwarding from M, the load-use interlock, a 33-cycle sequential
 multiply, a taken branch flushing the front end.
 
-### `js/test/run.mjs` — the JS wrapper
+### `src/test/run.ts` — the JS wrapper
 
 Two tiers. The **pure** tier needs nothing built — it exercises the blink
 policy, decoders and renderers on literal objects, which is where most of the
@@ -233,8 +233,8 @@ under Node and drives the real core, and is skipped with a notice if
 `build/wasm/hz3.mjs` is absent.
 
 ```
-node js/test/run.mjs --pure
-node js/test/run.mjs --filter blink
+node dist/test/run.js --pure
+node dist/test/run.js --filter blink
 ```
 
 The end-to-end case worth naming: `same-value writes reach JavaScript as three
@@ -243,17 +243,17 @@ asserts that all three arrive as separate writes with the register's value never
 changing after the first — the write strobe, the tracker, the JSON seam and the
 blink policy, checked as one path.
 
-### `js/cli/hz3.mjs` — the same code the browser will run
+### `dist/cli/hz3.js` — the same code the browser will run
 
 Drives the WASM module through the same wrapper and the same renderers the UI
 will use, from a terminal:
 
 ```bash
-node js/cli/hz3.mjs run      --bin prog.bin
-node js/cli/hz3.mjs step     --bin prog.bin --instructions 12
-node js/cli/hz3.mjs trace    --bin prog.bin --out trace.jsonl
-node js/cli/hz3.mjs timeline --bin prog.bin
-node js/cli/hz3.mjs blink    --bin prog.bin
+node dist/cli/hz3.js run      --bin prog.bin
+node dist/cli/hz3.js step     --bin prog.bin --instructions 12
+node dist/cli/hz3.js trace    --bin prog.bin --out trace.jsonl
+node dist/cli/hz3.js timeline --bin prog.bin
+node dist/cli/hz3.js blink    --bin prog.bin
 ```
 
 `timeline` is the reservation table in ASCII, and reads a recorded trace just as
@@ -261,7 +261,7 @@ happily as a live run — so it works with no WASM at all:
 
 ```
 $ ./build/native/hz3_sim --bin hello.bin --quiet --trace t.jsonl --trace-to 40
-$ node js/cli/hz3.mjs timeline --trace t.jsonl
+$ node dist/cli/hz3.js timeline --trace t.jsonl
 0x80000020  bgeu t0, t1, 0x80000030  ..........XM............................
 0x80000030  jal ra, 0x80000040       ............XM..........................
 0x80000040  lui a5, 0x80000          ..............XM........................
@@ -280,10 +280,11 @@ honest per-instruction answer, and inventing one would teach a fiction.
 
 ## 5. What is not done yet
 
-- No SVG. `js/src/render-text.mjs` is the rendering layer with the pixels
-  removed; the datapath (M3) writes the same derived state onto SVG elements.
 - Traps and interrupts are probed (`p_m_trap_*`) but no test exercises them —
   IRQs are still tied off in `rtl/hz3_top.v`.
-- `js/` is plain ESM with JSDoc types so it runs under `node` with no build
-  step. It is written to be `tsc --checkJs`-clean when a TypeScript toolchain
-  arrives with the UI.
+- Memory is not yet surfaced as a panel; the bus fields are in the snapshot but
+  only the current transaction is drawn.
+
+The browser side built on top of this is described in
+[`visualization.md`](visualization.md); `src/core/render-text.ts` remains the
+same rendering logic with the pixels removed, and is what the CLI prints.

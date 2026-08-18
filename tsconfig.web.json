@@ -1,0 +1,18 @@
+{
+  "//": [
+    "src/viz — the browser visualization. DOM types, no node types.",
+    "Most of this project is still pure: the datapath model, its layout, the",
+    "scene builder and the snapshot bindings never touch the DOM, and are",
+    "exercised by the Node test runner. Only src/viz/render/dom.ts and the",
+    "panels actually need a document."
+  ],
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [],
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src/viz/**/*.ts"],
+  "references": [{ "path": "./tsconfig.core.json" }]
+}

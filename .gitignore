@@ -9,3 +9,7 @@ node_modules/
 *.swp
 *~
 .DS_Store
+
+# TypeScript build output
+/dist/
+*.tsbuildinfo
