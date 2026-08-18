@@ -119,7 +119,8 @@ npm install
 
 Expected at the end of step 4 — `test.sh` runs the four suites and reports
 each; anything not built is skipped rather than failed, so a partial checkout
-still gives useful output:
+still gives useful output. Add `--strict` when everything is supposed to be
+built and a skip should count as a failure (this is what CI runs):
 
 ```
 17 passed, 0 failed      # native C++: probe, snapshot, write tracker
@@ -167,6 +168,36 @@ self-explanatory from the error:
   `/opt/emsdk/upstream/emscripten/em++` on faith, so a machine without it
   verilated for a minute or two and then died on "No such file or directory".
   `scripts/toolchain.sh` now checks first and says what to set.
+- **`rm -rf dist` does not force a TypeScript rebuild.** The projects are
+  `composite`, and their `.tsbuildinfo` files live at the repository root, not
+  under `dist/`. Delete `dist/` alone and the next `tsc -b` reads a build log
+  saying everything is current, emits nothing, and leaves you with no `dist/`
+  and no error. Use `npm run clean` (`tsc -b --clean`) or `tsc -b --force`.
+
+## What CI runs
+
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) does the above on
+every push to `main` and every pull request, on `ubuntu-24.04` — the same
+distribution the versions in this document were measured on. Two jobs:
+
+| Job | Does | Roughly |
+|---|---|---|
+| `typescript` | `npm ci`, `tsc -b --force`, the pure test tier | under a minute |
+| `simulator` | submodule, apt toolchains, Emscripten, all three builds, `./scripts/test.sh --strict`, then the CLI over the WASM library | a few minutes |
+
+Two deliberate choices there:
+
+- **Emscripten is installed outside `/opt` and reached through `EMSDK`.** The
+  override documented above is therefore exercised by every CI run rather than
+  being a claim nobody tests.
+- **The Emscripten version is pinned** (`EMSDK_VERSION` at the top of the
+  workflow) rather than tracking `latest`, so an upstream release cannot turn
+  CI red on an unrelated pull request. Bumping that line is the upgrade, and
+  the table at the top of this document is what it should agree with.
+
+The heavy job runs `test.sh --strict` precisely because the friendly default
+would let a build failure masquerade as a pass — see the `hello.bin` note
+above.
 
 ## Workarounds (the reproducible versions)
 
